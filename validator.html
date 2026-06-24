@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teilnehmerlisten-Validator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --blue:#1F4E78; --blue-light:#E6F1FB;
+    --green:#0F6E56; --green-light:#E1F5EE;
+    --red:#A32D2D; --red-light:#FCEBEB;
+    --gray:#5F5E5A; --border:#D9D9D9;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family: Arial, Helvetica, sans-serif;
+    background:#F6F7F9; margin:0; padding:0; color:#222;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:32px 20px 80px;}
+  h1{font-size:22px; color:var(--blue); margin:0 0 4px;}
+  p.lead{color:var(--gray); margin:0 0 28px; font-size:14px;}
+  .section{
+    background:#fff; border:1px solid var(--border); border-radius:10px;
+    padding:20px 22px; margin-bottom:18px;
+  }
+  .section h2{font-size:16px; margin:0 0 10px; color:#222;}
+  .section .hint{font-size:13px; color:var(--gray); margin:0 0 14px;}
+  label.field-label{display:block; font-size:13px; font-weight:bold; margin-bottom:6px;}
+  input[type=number]{
+    width:120px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px;
+  }
+  .date-row{display:flex; flex-wrap:wrap; gap:14px; margin-bottom:6px;}
+  .date-field{display:flex; flex-direction:column; gap:4px;}
+  .date-field span{font-size:12px; color:var(--gray);}
+  .dropzone{
+    border:2px dashed var(--border); border-radius:8px; padding:22px;
+    text-align:center; font-size:13px; color:var(--gray); cursor:pointer;
+    background:#FAFBFC; transition:border-color .15s;
+  }
+  .dropzone.drag{border-color:var(--blue); background:var(--blue-light);}
+  .dropzone input{display:none;}
+  .filename{font-size:13px; margin-top:8px; color:#222;}
+  .result{margin-top:14px; border-radius:8px; padding:14px 16px; font-size:13px; display:none;}
+  .result.ok{background:var(--green-light); color:var(--green); display:block;}
+  .result.err{background:var(--red-light); color:var(--red); display:block;}
+  .result ul{margin:8px 0 0; padding-left:18px;}
+  .result li{margin-bottom:4px;}
+  .toggle{display:flex; gap:18px; margin-bottom:14px;}
+  .toggle label{font-size:14px; display:flex; align-items:center; gap:6px; cursor:pointer;}
+  .summary{
+    position:sticky; bottom:0; background:#fff; border-top:1px solid var(--border);
+    padding:14px 22px; margin:24px -20px -80px; display:flex; align-items:center;
+    justify-content:space-between; gap:12px;
+  }
+  .summary .status{font-size:14px; font-weight:bold;}
+  .summary .status.green{color:var(--green);}
+  .summary .status.red{color:var(--red);}
+  .summary .status.gray{color:var(--gray);}
+  a.tpl{font-size:13px; color:var(--blue); text-decoration:none;}
+  a.tpl:hover{text-decoration:underline;}
+  .small{font-size:12px; color:var(--gray); margin-top:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Teilnehmerlisten-Validator</h1>
+  <p class="lead">Prüfen Sie Ihre Excel-Dateien hier, bevor Sie das Tally-Formular ausfüllen. So sehen Sie sofort, ob etwas fehlt oder falsch ist — keine Warteschleife per E-Mail.</p>
+
+  <!-- HOTEL -->
+  <div class="section" id="hotel-section">
+    <h2>1. Hotel</h2>
+    <div class="toggle">
+      <label><input type="radio" name="hotel-yn" value="yes" onchange="toggleSection('hotel')"> Ja, Hotel buchen</label>
+      <label><input type="radio" name="hotel-yn" value="no" checked onchange="toggleSection('hotel')"> Nein</label>
+    </div>
+    <div id="hotel-body" style="display:none;">
+      <p class="hint">Geben Sie an, wie viele Personen pro Datum übernachten. Nur die ausgewählten Daten werden geprüft.</p>
+      <div class="date-row" id="hotel-dates"></div>
+      <div style="margin:14px 0;">
+        <a class="tpl" href="Hotel_Teilnehmer.xlsx" download>↓ Hotel-Vorlage herunterladen</a>
+      </div>
+      <div class="dropzone" id="hotel-drop" onclick="document.getElementById('hotel-file').click()">
+        Excel-Datei hier ablegen oder klicken
+        <input type="file" id="hotel-file" accept=".xlsx,.xls">
+      </div>
+      <div class="filename" id="hotel-filename"></div>
+      <div class="result" id="hotel-result"></div>
+    </div>
+  </div>
+
+  <!-- SALES VOUCHER -->
+  <div class="section" id="voucher-section">
+    <h2>2. Sales Voucher</h2>
+    <div class="toggle">
+      <label><input type="radio" name="voucher-yn" value="yes" onchange="toggleSection('voucher')"> Ja, Sales Voucher buchen</label>
+      <label><input type="radio" name="voucher-yn" value="no" checked onchange="toggleSection('voucher')"> Nein</label>
+    </div>
+    <div id="voucher-body" style="display:none;">
+      <label class="field-label">Anzahl Personen</label>
+      <input type="number" id="voucher-count" min="1" value="1">
+      <div style="margin:14px 0;">
+        <a class="tpl" href="Sales_Voucher_Teilnehmer.xlsx" download>↓ Sales-Voucher-Vorlage herunterladen</a>
+      </div>
+      <div class="dropzone" id="voucher-drop" onclick="document.getElementById('voucher-file').click()">
+        Excel-Datei hier ablegen oder klicken
+        <input type="file" id="voucher-file" accept=".xlsx,.xls">
+      </div>
+      <div class="filename" id="voucher-filename"></div>
+      <div class="result" id="voucher-result"></div>
+    </div>
+  </div>
+
+  <!-- DRIVING EXPERIENCE -->
+  <div class="section" id="driving-section">
+    <h2>3. Fahrerlebnis</h2>
+    <div class="toggle">
+      <label><input type="radio" name="driving-yn" value="yes" onchange="toggleSection('driving')"> Ja, Fahrerlebnis buchen</label>
+      <label><input type="radio" name="driving-yn" value="no" checked onchange="toggleSection('driving')"> Nein</label>
+    </div>
+    <div id="driving-body" style="display:none;">
+      <label class="field-label">Anzahl Personen</label>
+      <input type="number" id="driving-count" min="1" value="1">
+      <div style="margin:14px 0;">
+        <a class="tpl" href="Fahrerlebnis_Teilnehmer.xlsx" download>↓ Fahrerlebnis-Vorlage herunterladen</a>
+      </div>
+      <div class="dropzone" id="driving-drop" onclick="document.getElementById('driving-file').click()">
+        Excel-Datei hier ablegen oder klicken
+        <input type="file" id="driving-file" accept=".xlsx,.xls">
+      </div>
+      <div class="filename" id="driving-filename"></div>
+      <div class="result" id="driving-result"></div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <span class="status gray" id="overall-status">Noch keine Prüfung durchgeführt</span>
+    <a class="tpl" id="tally-link" href="#" target="_blank" style="font-weight:bold;">Weiter zum Tally-Formular →</a>
+  </div>
+</div>
+
+<script>
+const EVENT_DATES = ["15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
+const state = { hotel:false, voucher:false, driving:false };
+
+function toggleSection(name){
+  const yes = document.querySelector(`input[name="${name}-yn"][value="yes"]`).checked;
+  document.getElementById(name+"-body").style.display = yes ? "block" : "none";
+  state[name] = false; // require re-validation
+  if(name==="hotel" && yes) renderHotelDates();
+  updateOverall();
+}
+
+function renderHotelDates(){
+  const wrap = document.getElementById("hotel-dates");
+  wrap.innerHTML = "";
+  EVENT_DATES.forEach(d=>{
+    const id = "hotel-count-"+d.replace(/\./g,"");
+    const field = document.createElement("div");
+    field.className = "date-field";
+    field.innerHTML = `<span>${d}</span><input type="number" min="0" value="0" id="${id}">`;
+    wrap.appendChild(field);
+  });
+}
+
+function setupDrop(prefix, handler){
+  const drop = document.getElementById(prefix+"-drop");
+  const input = document.getElementById(prefix+"-file");
+  input.addEventListener("change", e=>{ if(e.target.files[0]) handleFile(prefix, e.target.files[0], handler); });
+  drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("drag"); });
+  drop.addEventListener("dragleave", ()=> drop.classList.remove("drag"));
+  drop.addEventListener("drop", e=>{
+    e.preventDefault(); drop.classList.remove("drag");
+    if(e.dataTransfer.files[0]) handleFile(prefix, e.dataTransfer.files[0], handler);
+  });
+}
+
+function handleFile(prefix, file, handler){
+  document.getElementById(prefix+"-filename").textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:"array"});
+      const sheetNames = wb.SheetNames.filter(n => n.toLowerCase()!=="instructions");
+      const sheet = wb.Sheets[sheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:""});
+      handler(rows);
+    }catch(err){
+      showResult(prefix, false, ["Datei konnte nicht gelesen werden. Bitte als .xlsx speichern und erneut hochladen."]);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showResult(prefix, ok, messages){
+  const el = document.getElementById(prefix+"-result");
+  el.className = "result " + (ok ? "ok" : "err");
+  if(ok){
+    el.innerHTML = "✓ Alles passt. Diese Liste ist bereit für Tally.";
+  } else {
+    el.innerHTML = "✕ Bitte korrigieren:<ul>" + messages.map(m=>`<li>${m}</li>`).join("") + "</ul>";
+  }
+  state[prefix] = ok;
+  updateOverall();
+}
+
+function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()); }
+function isValidPhone(v){ return /^(\+49|0)[1-9][0-9\s\-]{8,14}$/.test(String(v).trim()); }
+
+function validateHotel(rows){
+  const errors = [];
+  const expected = {};
+  EVENT_DATES.forEach(d=>{
+    const val = parseInt(document.getElementById("hotel-count-"+d.replace(/\./g,"")).value, 10) || 0;
+    if(val>0) expected[d]=val;
+  });
+  if(Object.keys(expected).length===0){
+    errors.push("Bitte mindestens ein Datum mit Personenzahl > 0 angeben.");
+  }
+  const counts = {};
+  rows.forEach((r,i)=>{
+    const rn = i+2;
+    const datum = String(r["Datum"]||"").trim();
+    const vorname = String(r["Vorname"]||"").trim();
+    const nachname = String(r["Nachname"]||"").trim();
+    const pass = String(r["Reisepassnummer"]||"").trim();
+    if(!datum && !vorname && !nachname && !pass) return;
+    if(!EVENT_DATES.includes(datum)){
+      errors.push(`Zeile ${rn}: Datum "${datum||"(leer)"}" ist kein gültiges Eventdatum.`);
+    } else {
+      counts[datum] = (counts[datum]||0)+1;
+    }
+    if(!vorname) errors.push(`Zeile ${rn}: Vorname fehlt.`);
+    if(!nachname) errors.push(`Zeile ${rn}: Nachname fehlt.`);
+    if(!pass) errors.push(`Zeile ${rn}: Reisepassnummer fehlt.`);
+  });
+  Object.keys(expected).forEach(d=>{
+    const found = counts[d]||0;
+    if(found !== expected[d]){
+      errors.push(`${d}: erwartet ${expected[d]} Personen, gefunden ${found}.`);
+    }
+  });
+  Object.keys(counts).forEach(d=>{
+    if(!expected[d]) errors.push(`Datei enthält Zeilen für ${d}, das nicht im Formular ausgewählt wurde.`);
+  });
+  showResult("hotel", errors.length===0, errors);
+}
+
+function validateVoucher(rows){
+  const errors = [];
+  const expected = parseInt(document.getElementById("voucher-count").value,10) || 0;
+  let found = 0;
+  rows.forEach((r,i)=>{
+    const rn = i+2;
+    const vorname = String(r["Vorname"]||"").trim();
+    const nachname = String(r["Nachname"]||"").trim();
+    const firma = String(r["Firma"]||"").trim();
+    const position = String(r["Position"]||"").trim();
+    const email = String(r["Email"]||"").trim();
+    const handy = String(r["Handynummer"]||"").trim();
+    if(!vorname && !nachname && !firma && !position && !email && !handy) return;
+    found++;
+    if(!vorname) errors.push(`Zeile ${rn}: Vorname fehlt.`);
+    if(!nachname) errors.push(`Zeile ${rn}: Nachname fehlt.`);
+    if(!firma) errors.push(`Zeile ${rn}: Firma fehlt.`);
+    if(!position) errors.push(`Zeile ${rn}: Position fehlt.`);
+    if(!email) errors.push(`Zeile ${rn}: Email fehlt.`);
+    else if(!isValidEmail(email)) errors.push(`Zeile ${rn}: Email "${email}" ist ungültig.`);
+    if(!handy) errors.push(`Zeile ${rn}: Handynummer fehlt.`);
+    else if(!isValidPhone(handy)) errors.push(`Zeile ${rn}: Handynummer "${handy}" hat ein ungültiges Format.`);
+  });
+  if(found !== expected){
+    errors.push(`Erwartet ${expected} Personen, gefunden ${found} Zeilen.`);
+  }
+  showResult("voucher", errors.length===0, errors);
+}
+
+function validateDriving(rows){
+  const errors = [];
+  const expected = parseInt(document.getElementById("driving-count").value,10) || 0;
+  let found = 0;
+  rows.forEach((r,i)=>{
+    const rn = i+2;
+    const vorname = String(r["Vorname"]||"").trim();
+    const nachname = String(r["Nachname"]||"").trim();
+    const erlebnis = String(r["Fahrerlebnis"]||"").trim();
+    const lizenz = String(r["C_Klasse_Fuehrerschein"]||"").trim();
+    if(!vorname && !nachname && !erlebnis && !lizenz) return;
+    found++;
+    if(!vorname) errors.push(`Zeile ${rn}: Vorname fehlt.`);
+    if(!nachname) errors.push(`Zeile ${rn}: Nachname fehlt.`);
+    if(!["selbstfahren","beifahrer"].includes(erlebnis)){
+      errors.push(`Zeile ${rn}: Fahrerlebnis muss "selbstfahren" oder "beifahrer" sein (gefunden: "${erlebnis||"leer"}").`);
+    }
+    if(!["Ja","Nein"].includes(lizenz)){
+      errors.push(`Zeile ${rn}: C_Klasse_Fuehrerschein muss "Ja" oder "Nein" sein (gefunden: "${lizenz||"leer"}").`);
+    }
+    if(erlebnis === "selbstfahren" && lizenz !== "Ja"){
+      errors.push(`Zeile ${rn}: Bei "selbstfahren" muss C_Klasse_Fuehrerschein = "Ja" sein.`);
+    }
+  });
+  if(found !== expected){
+    errors.push(`Erwartet ${expected} Personen, gefunden ${found} Zeilen.`);
+  }
+  showResult("driving", errors.length===0, errors);
+}
+
+setupDrop("hotel", validateHotel);
+setupDrop("voucher", validateVoucher);
+setupDrop("driving", validateDriving);
+
+function updateOverall(){
+  const active = [];
+  if(document.querySelector('input[name="hotel-yn"][value="yes"]').checked) active.push("hotel");
+  if(document.querySelector('input[name="voucher-yn"][value="yes"]').checked) active.push("voucher");
+  if(document.querySelector('input[name="driving-yn"][value="yes"]').checked) active.push("driving");
+
+  const statusEl = document.getElementById("overall-status");
+  if(active.length===0){
+    statusEl.textContent = "Bitte mindestens einen Programmpunkt wählen.";
+    statusEl.className = "status gray";
+    return;
+  }
+  const allOk = active.every(a=>state[a]);
+  if(allOk){
+    statusEl.textContent = "✓ Alle ausgewählten Listen sind gültig — bereit für Tally.";
+    statusEl.className = "status green";
+  } else {
+    statusEl.textContent = "Noch offene Korrekturen — bitte oben prüfen.";
+    statusEl.className = "status red";
+  }
+}
+
+// TODO: replace with your real Tally form URL
+document.getElementById("tally-link").href = "https://tally.so/r/your-form-id";
+</script>
+</body>
+</html>
