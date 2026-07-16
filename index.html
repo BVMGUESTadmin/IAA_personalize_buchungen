@@ -427,18 +427,26 @@ function renderDateFields(category){
   const personalizedDates = personalized[category+"Dates"];
 
   if(isPersonalizedMode && personalizedDates){
-    // Only show the exact dates the partner booked, with locked counts
-    Object.keys(personalizedDates).forEach(d=>{
-      const count = personalizedDates[d];
-      const id = category+"-count-"+d.replace(/\./g,"");
-      const field = document.createElement("div");
-      field.className = "date-field";
-      field.innerHTML = `<span>${d}</span><input type="number" min="0" value="${count}" id="${id}" readonly style="background:#F3F3F3;">`;
-      wrap.appendChild(field);
-    });
+    // Only show the exact dates the partner booked, sorted chronologically, with locked counts
+    Object.keys(personalizedDates)
+      .sort((a, b) => {
+        // Parse "DD.MM.YYYY" to comparison-friendly Date objects
+        const parseDate = (dateStr) => {
+          const parts = dateStr.split('.');
+          return new Date(parts[2], parts[1] - 1, parts[0]);
+        };
+        return parseDate(a) - parseDate(b);
+      })
+      .forEach(d=>{
+        const count = personalizedDates[d];
+        const id = category+"-count-"+d.replace(/\./g,"");
+        const field = document.createElement("div");
+        field.className = "date-field";
+        field.innerHTML = `<span>${d}</span><input type="number" min="0" value="${count}" id="${id}" readonly style="background:#F3F3F3;">`;
+        wrap.appendChild(field);
+      });
     return;
   }
-
   // Fallback: manual mode, show all event dates, editable, default 0
   EVENT_DATES.forEach(d=>{
     const id = category+"-count-"+d.replace(/\./g,"");
