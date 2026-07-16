@@ -178,6 +178,24 @@
     </div>
   </div>
 
+  <!-- SLA SECTION -->
+  <div class="section" id="sla-section" style="display:none;">
+    <h2 id="sla-header">4. Service Level Agreement (SLA)</h2>
+    <span class="included-tag" id="sla-tag">Erforderlich</span>
+    <div id="sla-body">
+      <p class="hint" id="sla-hint">Bitte laden Sie Ihr SLA herunter, unterschreiben Sie es und laden Sie es hier als PDF wieder hoch.</p>
+      <div style="margin:14px 0;">
+        <a class="tpl" id="sla-download-link" href="#" target="_blank">↓ Ununterschriebenes SLA herunterladen</a>
+      </div>
+      <div class="dropzone" id="sla-drop" onclick="document.getElementById('sla-file').click()">
+        Unterschriebenes SLA (PDF) hier ablegen oder klicken
+        <input type="file" id="sla-file" accept=".pdf">
+      </div>
+      <div class="filename" id="sla-filename"></div>
+      <div class="result" id="sla-result"></div>
+    </div>
+  </div>
+
   <div class="summary">
     <span class="status gray" id="overall-status">Noch keine Prüfung durchgeführt</span>
   </div>
@@ -204,8 +222,8 @@
 
 <script>
 const EVENT_DATES = ["15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
-const state = { hotel:false, voucher:false, driving:false };
-const rawFiles = { hotel:null, voucher:null, driving:null }; // actual File objects, kept for submission
+const state = { hotel:false, voucher:false, driving:false, sla:false };
+const rawFiles = { hotel:null, voucher:null, driving:null, sla:null }; // actual File objects, kept for submission
 
 // TODO: replace with your real Zapier Catch Hook webhook URL
 const WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/17616690/42majg9/";
@@ -224,17 +242,151 @@ const personalized = {
   name: params.get("name"),
   hotelDates: parseDatesParam("hotelDates"),     // {"15.09.2026": 59, ...} or null
   voucherDates: parseDatesParam("voucherDates"),
-  drivingDates: parseDatesParam("drivingDates")
+  drivingDates: parseDatesParam("drivingDates"),
+  sprache: params.get("sprache"),
+  slaUrl: params.get("sla")
 };
 const isPersonalizedMode = personalized.hotel !== null || personalized.voucher !== null || personalized.driving !== null;
 
+// ---- TRANSLATIONS DICTIONARY ----
+const TRANSLATIONS = {
+  de: {
+    title: "Personalisierung Ihrer Buchung",
+    lead: "Bitte überprüfen Sie Ihre Excel-Dateien sorgfältig. Erst wenn alle Daten korrekt ausgefüllt sind, kann der Personalisierungsprozess abgeschlossen werden.",
+    greeting: (name) => `Hallo ${decodeURIComponent(name)}, hiermit erhalten Sie eine Übersicht über die von Ihnen gebuchten Programmpunkte, welche noch zu personalisieren sind. Bitte laden Sie hierzu unter dem jeweiligen Programmpunkt die entsprechende Vorlage herunter, ergänzen Sie diese um die erforderlichen Angaben und laden Sie die Datei anschließend wieder hoch. Bitte beachten Sie, dass die Anzahl der Datensätze in der Excel-Liste exakt der Anzahl Ihrer gebuchten Tickets entsprechen muss; andernfalls kann die Datei nicht hochgeladen werden. Sollten sich Ihre Bedarfe geändert haben, kontaktieren Sie uns bitte im Vorfeld unter: iaa@customer-side.mercedes-benz-truck-events.com.`,
+    hotelTitle: "1. Hotel",
+    hotelTag: "In Ihrer Buchung enthalten",
+    hotelYes: "Ja, Hotel buchen",
+    hotelNo: "Nein",
+    hotelHint: "Hier finden Sie die von Ihnen gebuchten Übernachtungen. Bitte beachten Sie, dass auch nur diese geprüft werden.",
+    hotelTemplate: "↓ Hotel-Vorlage herunterladen",
+    voucherTitle: "2. Sales Lounge & VIP Café",
+    voucherTag: "In Ihrer Buchung enthalten",
+    voucherYes: "Ja, Sales Lounge & VIP Café buchen",
+    voucherNo: "Nein",
+    voucherHint: "Hier finden Sie die Anzahl an Vouchern, die Sie für die Sales Lounge & das VIP Café gebucht haben. Bitte beachten Sie, dass nur diese Anzahl geprüft wird.",
+    voucherTemplate: "↓ Sales Lounge & VIP Café-Vorlage herunterladen",
+    drivingTitle: "3. Driving Experience",
+    drivingTag: "In Ihrer Buchung enthalten",
+    drivingYes: "Ja, Driving Experience buchen",
+    drivingNo: "Nein",
+    drivingHint: "Hier finden Sie die Anzahl an Slots, die Sie für die Driving Experience gebucht haben. Bitte beachten Sie, dass nur diese Anzahl geprüft wird.",
+    drivingTemplate: "↓ Driving Experience-Vorlage herunterladen",
+    dropzone: "Excel-Datei hier ablegen oder klicken",
+    overallPending: "Noch offene Korrekturen — bitte oben prüfen.",
+    overallValid: "✓ Alle relevanten Listen sind gültig — Absenden ist freigeschaltet.",
+    overallEmpty: "Keine Programmpunkte für diese Buchung gefunden.",
+    formLockedText: "Der Absenden-Button wird aktiviert, sobald alle Listen oben erfolgreich geprüft wurden.",
+    submitBtn: "Absenden",
+    submitStatusErr: "Beim Absenden ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder kontaktieren Sie uns.",
+    thankYou: "Vielen Dank! Ihre Anmeldung wurde erfolgreich übermittelt.",
+    // SLA-specific translations
+    slaTitle: "4. Service Level Agreement (SLA)",
+    slaTag: "Erforderlich",
+    slaHint: "Bitte laden Sie Ihr SLA herunter, unterschreiben Sie es und laden Sie es hier als PDF wieder hoch.",
+    slaDownload: "↓ Ununterschriebenes SLA herunterladen",
+    slaDropzone: "Unterschriebenes SLA (PDF) hier ablegen oder klicken",
+    slaErrInvalidPdf: "Bitte laden Sie eine gültige PDF-Datei hoch.",
+    slaErrUnsigned: "Die hochgeladene Datei scheint das originale, nicht unterschriebene Dokument zu sein. Bitte laden Sie das eingescannte, unterschriebene Dokument hoch."
+  },
+  en: {
+    title: "Personalize your booking",
+    lead: "Please check your Excel files carefully. The personalization process can only be completed once all data has been filled in correctly.",
+    greeting: (name) => `Hello ${decodeURIComponent(name)}, here is an overview of the program items you have booked that still need to be personalized. Please download the corresponding template under the respective program item, add the required details, and then upload the file again. Please note that the number of data records in the Excel list must match the exact number of your booked tickets; otherwise, the file cannot be uploaded. If your requirements have changed, please contact us in advance at: iaa@customer-side.mercedes-benz-truck-events.com.`,
+    hotelTitle: "1. Hotel",
+    hotelTag: "Included in your booking",
+    hotelYes: "Yes, book Hotel",
+    hotelNo: "No",
+    hotelHint: "Here you will find the overnight stays you have booked. Please note that only these numbers will be validated.",
+    hotelTemplate: "↓ Download Hotel Template",
+    voucherTitle: "2. Sales Lounge & VIP Café",
+    voucherTag: "Included in your booking",
+    voucherYes: "Yes, book Sales Lounge & VIP Café",
+    voucherNo: "No",
+    voucherHint: "Here you will find the number of vouchers you have booked for the Sales Lounge & the VIP Café. Please note that only these numbers will be validated.",
+    voucherTemplate: "↓ Download Sales Lounge & VIP Café Template",
+    drivingTitle: "3. Driving Experience",
+    drivingTag: "Included in your booking",
+    drivingYes: "Yes, book Driving Experience",
+    drivingNo: "No",
+    drivingHint: "Here you will find the number of slots you have booked for the Driving Experience. Please note that only these numbers will be validated.",
+    drivingTemplate: "↓ Download Driving Experience Template",
+    dropzone: "Drop Excel file here or click to upload",
+    overallPending: "Open corrections remaining — please verify above.",
+    overallValid: "✓ All relevant lists are valid — Submission is unlocked.",
+    overallEmpty: "No program items found for this booking.",
+    formLockedText: "The submit button will be activated as soon as all lists above have been successfully validated.",
+    submitBtn: "Submit",
+    submitStatusErr: "An error occurred during submission. Please try again or contact us.",
+    thankYou: "Thank you! Your registration has been successfully submitted.",
+    // SLA-specific translations
+    slaTitle: "4. Service Level Agreement (SLA)",
+    slaTag: "Required",
+    slaHint: "Please download your SLA, sign, and upload it back here as a PDF.",
+    slaDownload: "↓ Download Unsigned SLA",
+    slaDropzone: "Drop signed SLA (PDF) here or click to upload",
+    slaErrInvalidPdf: "Please upload a valid PDF file.",
+    slaErrUnsigned: "The uploaded file appears to be the original, unsigned document. Please upload your scanned, signed document."
+  }
+};
+
+// Retrieve Sprache from URL (defaulting to 'de' if missing or not 'en')
+const rawSprache = (params.get("sprache") || "de").toLowerCase();
+const lang = TRANSLATIONS[rawSprache] ? rawSprache : "de";
+const t = TRANSLATIONS[lang];
+
 function applyPersonalization(){
+  // --- TRANSLATE ALL INTERFACE TEXTS ON LOAD ---
+  document.querySelector("h1").textContent = t.title;
+  document.querySelector("p.lead").textContent = t.lead;
+  
+  document.querySelector("#hotel-section h2").textContent = t.hotelTitle;
+  document.querySelector("#hotel-tag").textContent = t.hotelTag;
+  document.querySelector("#hotel-toggle label:nth-child(1)").childNodes[1].nodeValue = " " + t.hotelYes;
+  document.querySelector("#hotel-toggle label:nth-child(2)").childNodes[1].nodeValue = " " + t.hotelNo;
+  document.querySelector("#hotel-body .hint").textContent = t.hotelHint;
+  document.querySelector("#hotel-body .tpl").textContent = t.hotelTemplate;
+  document.querySelector("#hotel-drop").childNodes[0].nodeValue = t.dropzone;
+
+  document.querySelector("#voucher-section h2").textContent = t.voucherTitle;
+  document.querySelector("#voucher-tag").textContent = t.voucherTag;
+  document.querySelector("#voucher-toggle label:nth-child(1)").childNodes[1].nodeValue = " " + t.voucherYes;
+  document.querySelector("#voucher-toggle label:nth-child(2)").childNodes[1].nodeValue = " " + t.voucherNo;
+  document.querySelector("#voucher-body .hint").textContent = t.voucherHint;
+  document.querySelector("#voucher-body .tpl").textContent = t.voucherTemplate;
+  document.querySelector("#voucher-drop").childNodes[0].nodeValue = t.dropzone;
+
+  document.querySelector("#driving-section h2").textContent = t.drivingTitle;
+  document.querySelector("#driving-tag").textContent = t.drivingTag;
+  document.querySelector("#driving-toggle label:nth-child(1)").childNodes[1].nodeValue = " " + t.drivingYes;
+  document.querySelector("#driving-toggle label:nth-child(2)").childNodes[1].nodeValue = " " + t.drivingNo;
+  document.querySelector("#driving-body .hint").textContent = t.drivingHint;
+  document.querySelector("#driving-body .tpl").textContent = t.drivingTemplate;
+  document.querySelector("#driving-drop").childNodes[0].nodeValue = t.dropzone;
+
+  document.querySelector("#form-locked p").textContent = t.formLockedText;
+  document.getElementById("submit-btn").textContent = t.submitBtn;
+  document.querySelector("#thankyou-panel p").textContent = t.thankYou;
+
+  // --- SHOW AND CONFIGURE SLA SECTION IF PRESENT ---
+  if(personalized.slaUrl) {
+    document.getElementById("sla-section").style.display = "block";
+    document.getElementById("sla-header").textContent = t.slaTitle;
+    document.getElementById("sla-tag").textContent = t.slaTag;
+    document.getElementById("sla-hint").textContent = t.slaHint;
+    document.getElementById("sla-drop").childNodes[0].nodeValue = t.slaDropzone;
+    
+    const downloadLink = document.getElementById("sla-download-link");
+    downloadLink.textContent = t.slaDownload;
+    downloadLink.href = decodeURIComponent(personalized.slaUrl);
+  }
+
   if(!isPersonalizedMode) return;
 
   if(personalized.name){
     const g = document.getElementById("greeting");
     g.style.display = "block";
-    g.textContent = `Hallo ${decodeURIComponent(personalized.name)}, hier sehen Sie nur die Programmpunkte, die Sie gebucht haben.`;
+    g.textContent = t.greeting(personalized.name);
   }
 
   ["hotel","voucher","driving"].forEach(key=>{
@@ -312,6 +464,13 @@ function setupDrop(prefix, handler){
 function handleFile(prefix, file, handler){
   document.getElementById(prefix+"-filename").textContent = file.name;
   rawFiles[prefix] = file;
+
+  // Bypass Excel sheet compilation logic if processing the SLA PDF
+  if (prefix === "sla") {
+    handler(file);
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (e)=>{
     try{
@@ -479,9 +638,35 @@ function validateDriving(rows){
   showResult("driving", errors.length===0, errors);
 }
 
+function validateSLA(file) {
+  const errors = [];
+
+  // 1. Enforce PDF extension
+  if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
+    errors.push(t.slaErrInvalidPdf);
+    showResult("sla", false, errors);
+    return;
+  }
+
+  // 2. Prevent simply uploading the downloaded unsigned document
+  if (personalized.slaUrl) {
+    try {
+      const originalFileName = decodeURIComponent(personalized.slaUrl).split('/').pop();
+      if (file.name === originalFileName) {
+        errors.push(t.slaErrUnsigned);
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  showResult("sla", errors.length === 0, errors);
+}
+
 setupDrop("hotel", validateHotel);
 setupDrop("voucher", validateVoucher);
 setupDrop("driving", validateDriving);
+setupDrop("sla", validateSLA);
 
 function updateOverall(){
   const active = [];
@@ -495,32 +680,42 @@ function updateOverall(){
     if(document.querySelector('input[name="driving-yn"][value="yes"]').checked) active.push("driving");
   }
 
+  // Require SLA document validation if the SLA link is part of this personalized workflow
+  if(personalized.slaUrl) {
+    active.push("sla");
+  }
+
   const statusEl = document.getElementById("overall-status");
   const lockReasons = document.getElementById("lock-reasons");
   lockReasons.innerHTML = "";
 
   if(active.length===0){
-    statusEl.textContent = "Keine Programmpunkte für diese Buchung gefunden.";
+    statusEl.textContent = t.overallEmpty;
     statusEl.className = "status gray";
-    lockReasons.innerHTML = "<li>Keine Buchung erkannt.</li>";
+    lockReasons.innerHTML = `<li>${t.overallEmpty}</li>`;
     setFormLocked(true);
     return;
   }
 
-  const labels = { hotel:"Hotel", voucher:"Sales Lounge & VIP Café", driving:"Driving Experience" };
+  const labels = { 
+    hotel: t.hotelTitle, 
+    voucher: t.voucherTitle, 
+    driving: t.drivingTitle,
+    sla: t.slaTitle
+  };
   const pending = active.filter(a=>!state[a]);
 
   const allOk = pending.length === 0;
   if(allOk){
-    statusEl.textContent = "✓ Alle relevanten Listen sind gültig — Absenden ist freigeschaltet.";
+    statusEl.textContent = t.overallValid;
     statusEl.className = "status green";
     setFormLocked(false);
   } else {
-    statusEl.textContent = "Noch offene Korrekturen — bitte oben prüfen.";
+    statusEl.textContent = t.overallPending;
     statusEl.className = "status red";
     pending.forEach(p=>{
       const li = document.createElement("li");
-      li.textContent = labels[p] + ": noch nicht erfolgreich geprüft.";
+      li.textContent = labels[p] + (lang === "de" ? ": noch nicht erfolgreich geprüft." : ": not successfully validated yet.");
       lockReasons.appendChild(li);
     });
     setFormLocked(true);
@@ -543,7 +738,7 @@ async function submitAll(){
   const btn = document.getElementById("submit-btn");
   const statusEl = document.getElementById("submit-status");
   btn.disabled = true;
-  btn.textContent = "Wird gesendet...";
+  btn.textContent = lang === "de" ? "Wird gesendet..." : "Submitting...";
   statusEl.textContent = "";
 
   try{
@@ -557,6 +752,9 @@ async function submitAll(){
     if(rawFiles.hotel) formData.append("hotelFile", rawFiles.hotel, rawFiles.hotel.name);
     if(rawFiles.voucher) formData.append("voucherFile", rawFiles.voucher, rawFiles.voucher.name);
     if(rawFiles.driving) formData.append("drivingFile", rawFiles.driving, rawFiles.driving.name);
+    
+    // Send the signed SLA PDF back to Zapier hook
+    if(rawFiles.sla) formData.append("slaFile", rawFiles.sla, rawFiles.sla.name);
 
     const res = await fetch(WEBHOOK_URL, { method: "POST", body: formData });
 
@@ -566,9 +764,9 @@ async function submitAll(){
     document.getElementById("thankyou-panel").style.display = "block";
   } catch(err){
     statusEl.style.color = "#A32D2D";
-    statusEl.textContent = "Beim Absenden ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder kontaktieren Sie uns.";
+    statusEl.textContent = t.submitStatusErr;
     btn.disabled = false;
-    btn.textContent = "Absenden";
+    btn.textContent = t.submitBtn;
   }
 }
 
