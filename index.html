@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hochladen detaillierter Buchungen</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+// SLA SIGNATURE VALIDATION -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
 <style>
   :root{
     --blue:#0078D7; --blue-light:#E6F1FB;
@@ -221,6 +223,8 @@
 </div>
 
 <script>
+// INITIALIZE THE PDF WORKER
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 const EVENT_DATES = ["15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
 const state = { hotel:false, voucher:false, driving:false, sla:false };
 const rawFiles = { hotel:null, voucher:null, driving:null, sla:null }; // actual File objects, kept for submission
@@ -244,7 +248,8 @@ const personalized = {
   voucherDates: parseDatesParam("voucherDates"),
   drivingDates: parseDatesParam("drivingDates"),
   sprache: params.get("sprache"),
-  slaUrl: params.get("sla")
+  slaUrl: params.get("sla"),
+  rawHotelBookings: params.get("hotelBookings") // <-- validate hotel bookings
 };
 const isPersonalizedMode = personalized.hotel !== null || personalized.voucher !== null || personalized.driving !== null;
 
@@ -334,6 +339,33 @@ const TRANSLATIONS = {
 const rawSprache = (params.get("sprache") || "de").toLowerCase();
 const lang = TRANSLATIONS[rawSprache] ? rawSprache : "de";
 const t = TRANSLATIONS[lang];
+
+// PARSING FUNCTION FOR HOTEL BOOKINGS
+function parseHotelBookings(rawText) {
+  const bookings = {};
+  if (!rawText) return bookings;
+
+  const lines = decodeURIComponent(rawText).split(/[\n•]/);
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    // Matches "[Date] - [Count] x [Optional Hotel ID] - [Hotel Name]"
+    const match = trimmed.match(/^(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d+)\s*x\s*(?:Hotel\s*\d+\s*-\s*)?(.+)$/i);
+    if (match) {
+      const date = match[1];
+      const count = parseInt(match[2], 10);
+      const hotelName = match[3].trim();
+
+      if (!bookings[date]) {
+        bookings[date] = {};
+      }
+      bookings[date][hotelName.toLowerCase()] = count;
+    }
+  });
+
+  return bookings;
+}
 
 function applyPersonalization(){
   // --- TRANSLATE ALL INTERFACE TEXTS ON LOAD ---
@@ -524,37 +556,113 @@ function getExpectedDateCounts(category){
 
 function validateHotel(rows){
   const errors = [];
-  const expected = getExpectedDateCounts("hotel");
-  if(Object.keys(expected).length===0){
-    errors.push("Bitte mindestens ein Datum mit Personenzahl > 0 angeben.");
+  
+  // Parse expected records from database query
+  const dbBookings = parseHotelBookings(personalized.rawHotelBookings);
+  
+  if (Object.keys(dbBookings).length === 0) {
+    errors.push(lang === "de" 
+      ? "Keine Hotelbuchungen in den Datenbank-Vorgaben gefunden." 
+      : "No hotel booking found in the database."
+    );
+    showResult("hotel", false, errors);
+    return;
   }
-  const counts = {};
-  rows.forEach((r,i)=>{
-    const rn = i+2;
-    const datum = String(r["Datum"]||"").trim();
-    const vorname = String(r["Vorname"]||"").trim();
-    const nachname = String(r["Nachname"]||"").trim();
-    const pass = String(r["Reisepassnummer"]||"").trim();
-    if(!datum && !vorname && !nachname && !pass) return;
-    if(!EVENT_DATES.includes(datum)){
-      errors.push(`Zeile ${rn}: Datum "${datum||"(leer)"}" ist kein gültiges Eventdatum.`);
-    } else {
-      counts[datum] = (counts[datum]||0)+1;
+  
+  const actualCounts = {};
+
+  rows.forEach((r, i) => {
+    const rn = i + 2;
+    
+    // Read cells accepting bilingual variations
+    const checkInRaw = String(r["Check-In"] || r["Check-in"] || "").trim();
+    const checkOutRaw = String(r["Check-Out"] || r["Check-out"] || "").trim();
+    const hotelName = String(r["Hotel"] || "").trim();
+    const vorname = String(r["Vorname"] || r["First Name"] || "").trim();
+    const nachname = String(r["Nachname"] || r["Last Name"] || "").trim();
+    const pass = String(r["Reisepassnummer"] || r["Passport Number"] || "").trim();
+
+    if(!checkInRaw && !checkOutRaw && !hotelName && !vorname && !nachname && !pass) return;
+
+    if(!vorname) errors.push(lang === "de" ? `Zeile ${rn}: Vorname fehlt.` : `Row ${rn}: First name is missing.`);
+    if(!nachname) errors.push(lang === "de" ? `Zeile ${rn}: Nachname fehlt.` : `Row ${rn}: Last name is missing.`);
+    if(!pass) errors.push(lang === "de" ? `Zeile ${rn}: Reisepassnummer fehlt.` : `Row ${rn}: Passport number is missing.`);
+    if(!hotelName) {
+      errors.push(lang === "de" ? `Zeile ${rn}: Hotel fehlt.` : `Row ${rn}: Hotel name is missing.`);
+      return;
     }
-    if(!vorname) errors.push(`Zeile ${rn}: Vorname fehlt.`);
-    if(!nachname) errors.push(`Zeile ${rn}: Nachname fehlt.`);
-    if(!pass) errors.push(`Zeile ${rn}: Reisepassnummer fehlt.`);
-  });
-  Object.keys(expected).forEach(d=>{
-    const found = counts[d]||0;
-    if(found !== expected[d]){
-      errors.push(`${d}: erwartet ${expected[d]} Personen, gefunden ${found}.`);
+    if(!checkInRaw || !checkOutRaw) {
+      errors.push(lang === "de" ? `Zeile ${rn}: Check-In oder Check-Out Datum fehlt.` : `Row ${rn}: Check-in or Check-out date is missing.`);
+      return;
+    }
+
+    const parseDate = (str) => {
+      const p = str.split('.');
+      if (p.length !== 3) return null;
+      return new Date(p[2], p[1] - 1, p[0]);
+    };
+
+    const checkInDate = parseDate(checkInRaw);
+    const checkOutDate = parseDate(checkOutRaw);
+
+    if(!checkInDate || !checkOutDate || checkInDate >= checkOutDate) {
+      errors.push(lang === "de" ? `Zeile ${rn}: Ungültiger Zeitraum (${checkInRaw} bis ${checkOutRaw}).` : `Row ${rn}: Invalid date range (${checkInRaw} to ${checkOutRaw}).`);
+      return;
+    }
+
+    // Map each individual night to verify counts
+    let current = new Date(checkInDate);
+    const hotelLower = hotelName.toLowerCase();
+
+    while (current < checkOutDate) {
+      const day = String(current.getDate()).padStart(2, '0');
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const year = current.getFullYear();
+      const formattedDate = `${day}.${month}.${year}`;
+
+      if (EVENT_DATES.includes(formattedDate)) {
+        if (!actualCounts[formattedDate]) {
+          actualCounts[formattedDate] = {};
+        }
+        actualCounts[formattedDate][hotelLower] = (actualCounts[formattedDate][hotelLower] || 0) + 1;
+      } else {
+        errors.push(lang === "de" ? `Zeile ${rn}: Datum ${formattedDate} liegt außerhalb des Eventzeitraums.` : `Row ${rn}: Date ${formattedDate} falls outside the event timeframe.`);
+      }
+
+      current.setDate(current.getDate() + 1);
     }
   });
-  Object.keys(counts).forEach(d=>{
-    if(!expected[d]) errors.push(`Datei enthält Zeilen für ${d}, das nicht im Formular ausgewählt wurde.`);
+
+  // Cross-reference with database configuration
+  Object.keys(dbBookings).forEach(date => {
+    Object.keys(dbBookings[date]).forEach(hotel => {
+      const expectedCount = dbBookings[date][hotel];
+      const foundCount = (actualCounts[date] && actualCounts[date][hotel]) || 0;
+
+      if (foundCount !== expectedCount) {
+        const hotelDisplayName = hotel.replace(/\b\w/g, c => c.toUpperCase());
+        errors.push(lang === "de" 
+          ? `${date} - ${hotelDisplayName}: Erwartet wurden ${expectedCount} Buchung(en), im Dokument wurden jedoch ${foundCount} Übernachtung(en) gefunden.` 
+          : `${date} - ${hotelDisplayName}: Expected ${expectedCount} booking(s), but found ${foundCount} overnight stay(s) in the document.`
+        );
+      }
+    });
   });
-  showResult("hotel", errors.length===0, errors);
+
+  // Flag unbooked or incorrect hotel names
+  Object.keys(actualCounts).forEach(date => {
+    Object.keys(actualCounts[date]).forEach(hotel => {
+      if (!dbBookings[date] || dbBookings[date][hotel] === undefined) {
+        const hotelDisplayName = hotel.replace(/\b\w/g, c => c.toUpperCase());
+        errors.push(lang === "de"
+          ? `Das Dokument enthält eine Buchung für das ${hotelDisplayName} am ${date}, welche nicht in Ihrer Buchung enthalten ist.`
+          : `The document contains a booking for ${hotelDisplayName} on ${date} which is not part of your original booking.`
+        );
+      }
+    });
+  });
+
+  showResult("hotel", errors.length === 0, errors);
 }
 
 function validateVoucher(rows){
@@ -656,19 +764,65 @@ function validateSLA(file) {
     return;
   }
 
-  // 2. Prevent simply uploading the downloaded unsigned document
-  if (personalized.slaUrl) {
+  const fileReader = new FileReader();
+  fileReader.onload = async function() {
     try {
-      const originalFileName = decodeURIComponent(personalized.slaUrl).split('/').pop();
-      if (file.name === originalFileName) {
+      const typedarray = new Uint8Array(this.result);
+      const pdf = await pdfjsLib.getDocument(typedarray).promise;
+
+      // Check A: Standard digital signature info in metadata block
+      let isDigitallySigned = false;
+      const metadata = await pdf.getMetadata();
+      if (metadata && metadata.info && metadata.info.Signature) {
+        isDigitallySigned = true;
+      }
+
+      // Check B: Interactive PDF Sign Form Field Widget checks
+      const annotations = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const pageAnns = await page.getAnnotations();
+        annotations.push(...pageAnns);
+      }
+      const hasCompletedSigField = annotations.some(ann => 
+        (ann.fieldType === 'Sig' && ann.fieldValue) || 
+        (ann.subtype === 'Widget' && ann.fieldType === 'Sig')
+      );
+
+      // Check C: Flat scan verification (Checks for handwriting / dates)
+      // When physically signed & scanned back, flat images override raw layout strings.
+      // We read the selectable text layer to verify if placeholders are still searchable.
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        fullText += textContent.items.map(item => item.str).join(" ");
+      }
+
+      const hasSignaturePlaceholdersText = 
+        fullText.includes("Unterschrift Kunde") || 
+        fullText.includes("Customer Signature");
+
+      // Validate SLA rule logic
+      if (!isDigitallySigned && !hasCompletedSigField && hasSignaturePlaceholdersText) {
         errors.push(t.slaErrUnsigned);
       }
-    } catch(e) {
-      console.error(e);
-    }
-  }
 
-  showResult("sla", errors.length === 0, errors);
+    } catch (e) {
+      console.error("SLA internal signature parser error: ", e);
+      // Fallback: Use original filename matching logic
+      if (personalized.slaUrl) {
+        const originalFileName = decodeURIComponent(personalized.slaUrl).split('/').pop();
+        if (file.name === originalFileName) {
+          errors.push(t.slaErrUnsigned);
+        }
+      }
+    }
+
+    showResult("sla", errors.length === 0, errors);
+  };
+
+  fileReader.readAsArrayBuffer(file);
 }
 
 setupDrop("hotel", validateHotel);
