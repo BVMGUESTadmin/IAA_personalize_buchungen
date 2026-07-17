@@ -505,7 +505,6 @@ function handleFile(prefix, file, handler){
   document.getElementById(prefix+"-filename").textContent = file.name;
   rawFiles[prefix] = file;
 
-  // Bypass Excel sheet compilation logic if processing the SLA PDF
   if (prefix === "sla") {
     handler(file);
     return;
@@ -515,8 +514,13 @@ function handleFile(prefix, file, handler){
   reader.onload = (e)=>{
     try{
       const wb = XLSX.read(e.target.result, {type:"array"});
-      const sheetNames = wb.SheetNames.filter(n => n.toLowerCase()!=="instructions");
-      const sheet = wb.Sheets[sheetNames[0]];
+      
+      // --- SWAP THIS CODE BLOCK TO AUTOMATICALLY FIND THE DATA SHEET ---
+      // Instead of just sheet 0, find the sheet name that doesn't say "instructions"
+      const targetSheetName = wb.SheetNames.find(name => name.toLowerCase() !== "instructions") || wb.SheetNames[0];
+      const sheet = wb.Sheets[targetSheetName];
+      // -----------------------------------------------------------------
+      
       const rows = XLSX.utils.sheet_to_json(sheet, {defval:""});
       handler(rows);
     }catch(err){
