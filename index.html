@@ -285,6 +285,7 @@ const TRANSLATIONS = {
     slaDropzone: "Unterschriebenes SLA (PDF) hier ablegen oder klicken",
     resultOk: "✓ Alles passt. Diese Liste ist bereit.",
     resultErrHead: "✕ Bitte korrigieren:",
+    moreErrors: (n) => `… und ${n} weitere Meldung(en). Bitte korrigieren Sie zunächst die oben genannten Punkte.`,
     checking: "Datei wird geprüft…",
     notValidatedYet: ": noch nicht erfolgreich geprüft.",
     // Field labels used inside error messages
@@ -356,6 +357,7 @@ const TRANSLATIONS = {
     slaDropzone: "Drop signed SLA (PDF) here or click to upload",
     resultOk: "✓ Everything checks out. This list is ready.",
     resultErrHead: "✕ Please correct the following:",
+    moreErrors: (n) => `… and ${n} more message(s). Please fix the points listed above first.`,
     checking: "Checking file…",
     notValidatedYet: ": not successfully validated yet.",
     f: {
@@ -431,10 +433,35 @@ function toDateObj(ddmmyyyy){
 }
 function sortDates(a, b){ return toDateObj(a) - toDateObj(b); }
 
+// Header matching is tolerant: case, spaces, hyphens, underscores and a
+// parenthetical translation are all ignored, so "Vorname (First Name)",
+// "Check- in" and "C_Klasse_Fuehrerschein" all resolve correctly.
+function normKey(k){
+  return String(k)
+    .replace(/\([^)]*\)/g, " ")
+    .toLowerCase()
+    .replace(/[^a-z0-9äöüß]/g, "");
+}
+
+// Rebuilds each row with normalised keys and drops unnamed helper columns
+// (the "<- Beispiel, bitte löschen" note column has no header).
+function normalizeRows(rows){
+  return rows.map(row => {
+    const out = {};
+    Object.keys(row).forEach(k => {
+      const nk = normKey(k);
+      if(!nk || /^empty\d*$/.test(nk)) return;
+      if(out[nk] === undefined || String(out[nk]).trim() === "") out[nk] = row[k];
+    });
+    return out;
+  });
+}
+
 // Reads a cell by any of the accepted German/English header names.
 function cell(row, names){
   for(const n of names){
-    if(row[n] !== undefined && row[n] !== null && String(row[n]).trim() !== "") return row[n];
+    const v = row[normKey(n)];
+    if(v !== undefined && v !== null && String(v).trim() !== "") return v;
   }
   return "";
 }
@@ -448,6 +475,19 @@ function isValidPhone(v){
   return digits.length >= 10 && digits.length <= 15;
 }
 function titleCase(s){ return s.replace(/\b\w/g, c => c.toUpperCase()); }
+
+// Template cells read "Hotel 3 - Intercity Hotel Celle"; the booking data
+// carries only the hotel name, so the numbering prefix is removed first.
+// Cell values carry the same bilingual pattern as the headers
+// ("Selbstfahrer:in (Self-Drive)"), so the translation in brackets is dropped
+// before a value is compared against the accepted options.
+function normChoice(v){
+  return String(v).replace(/\([^)]*\)/g, " ").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function cleanHotelName(name){
+  return String(name).replace(/^\s*hotel\s*\d+\s*[-–]\s*/i, "").trim();
+}
 
 // Trailing empty rows are ignored; an empty row *between* records is an error.
 function trimRows(rows, errors){
@@ -697,7 +737,11 @@ function showResult(prefix, ok, messages){
   if(ok){
     el.textContent = t.resultOk;
   } else {
-    el.innerHTML = t.resultErrHead + "<ul>" + messages.map(m => `<li>${escapeHtml(m)}</li>`).join("") + "</ul>";
+    const MAX = 25;
+    const shown = messages.slice(0, MAX);
+    let html = t.resultErrHead + "<ul>" + shown.map(m => `<li>${escapeHtml(m)}</li>`).join("");
+    if(messages.length > MAX) html += `<li><strong>${t.moreErrors(messages.length - MAX)}</strong></li>`;
+    el.innerHTML = html + "</ul>";
   }
   state[prefix] = ok;
   updateOverall();
@@ -723,7 +767,7 @@ const H = {
 
 function validateHotel(rows){
   const errors = [];
-  const data = trimRows(rows, errors);
+  const data = trimRows(normalizeRows(rows), errors);
   if(data.length === 0){ showResult("hotel", false, errors); return; }
 
   const useHotelNames = Object.keys(DB_HOTEL_BOOKINGS).length > 0;
@@ -773,7 +817,7 @@ function validateHotel(rows){
     const coDate = toDateObj(co);
     if(ciDate >= coDate){ errors.push(E.invalidRange(rn, ci, co)); return; }
 
-    const hotelLower = hotelName.toLowerCase();
+    const hotelLower = cleanHotelName(hotelName).toLowerCase();
     const current = new Date(ciDate);
     while(current < coDate){
       const night = fmtDate(current);
@@ -826,15 +870,15 @@ const V = {
   date:["Datum","Date"],
   firstName:["Vorname","First Name","Firstname"],
   lastName:["Nachname","Last Name","Lastname","Surname"],
-  company:["Firma","Company"],
+  company:["Firma","Company","Company Name","Firmenname"],
   position:["Position","Job Title","Funktion"],
   email:["Email","E-Mail","E-Mail-Adresse","Email Address"],
-  phone:["Handynummer","Mobile","Mobile Number","Telefon","Phone"]
+  phone:["Handynummer","Mobile Number","Mobile","Telefon","Phone"]
 };
 
 function validateVoucher(rows){
   const errors = [];
-  const data = trimRows(rows, errors);
+  const data = trimRows(normalizeRows(rows), errors);
   if(data.length === 0){ showResult("voucher", false, errors); return; }
 
   const expected = getExpectedDateCounts("voucher");
@@ -897,17 +941,17 @@ const D = {
   date:["Datum","Date"],
   firstName:["Vorname","First Name","Firstname"],
   lastName:["Nachname","Last Name","Lastname","Surname"],
-  type:["Fahr-Art","Fahrart","Driving Type","Driving-Type"],
-  license:["C_Klasse_Fuehrerschein","C_Klasse_Führerschein","Führerschein Klasse C","Class C Licence","Class C License","Driving Licence Class C"]
+  type:["Fahr-Art","Fahrart","Driving Type","Driving Preference","Fahrpraeferenz"],
+  license:["C_Klasse_Fuehrerschein","C_Klasse_Führerschein","Führerschein Klasse C","Class C Licence","Class C License","C_Class_Drivers License"]
 };
-const SELF_DRIVE = ["selbstfahrer:in","selbstfahrerin","selbstfahrer","selbstfahren","self-driving","self driving","selfdriving","driver"];
+const SELF_DRIVE = ["selbstfahrer:in","selbstfahrerin","selbstfahrer","selbstfahren","self-drive","self drive","selfdrive","self-driving","self driving","driver"];
 const CO_DRIVE   = ["beifahrer:in","beifahrerin","beifahrer","co-driver","co driver","passenger","mitfahrer:in","mitfahrer"];
 const YES_VALUES = ["ja","yes"];
 const NO_VALUES  = ["nein","no"];
 
 function validateDriving(rows){
   const errors = [];
-  const data = trimRows(rows, errors);
+  const data = trimRows(normalizeRows(rows), errors);
   if(data.length === 0){ showResult("driving", false, errors); return; }
 
   const expected = getExpectedDateCounts("driving");
@@ -925,8 +969,8 @@ function validateDriving(rows){
     const nachname = str(r, D.lastName);
     const artRaw   = str(r, D.type);
     const lizRaw   = str(r, D.license);
-    const art = artRaw.toLowerCase();
-    const liz = lizRaw.toLowerCase();
+    const art = normChoice(artRaw);
+    const liz = normChoice(lizRaw);
 
     if(!datumRaw) errors.push(E.missing(rn, F.date));
     if(!vorname)  errors.push(E.missing(rn, F.firstName));
