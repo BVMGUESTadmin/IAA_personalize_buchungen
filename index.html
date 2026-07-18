@@ -668,7 +668,12 @@ function handleFile(prefix, file, handler){
   reader.onload = (e) => {
     try{
       const wb = XLSX.read(e.target.result, { type:"array", cellDates:true });
-      const targetSheetName = wb.SheetNames.find(n => n.toLowerCase() !== "instructions") || wb.SheetNames[0];
+      // The templates ship with sheet 1 = instructions, sheet 2 = data.
+      // Fall back to a name-based lookup, then to the only sheet, for edited files.
+      const targetSheetName =
+        wb.SheetNames[1] ||
+        wb.SheetNames.find(n => !/anleitung|instruction|hinweis|readme/i.test(n)) ||
+        wb.SheetNames[0];
       const sheet = wb.Sheets[targetSheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { defval:"" });
       handler(rows);
