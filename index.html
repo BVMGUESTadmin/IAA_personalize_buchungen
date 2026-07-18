@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hochladen detaillierter Buchungen</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-// SLA SIGNATURE VALIDATION -->
+<!-- SLA signature validation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
 <style>
   :root{
@@ -53,6 +53,9 @@
   .date-row{display:flex; flex-wrap:wrap; gap:14px; margin-bottom:6px;}
   .date-field{display:flex; flex-direction:column; gap:4px;}
   .date-field span{font-size:14px; color:var(--gray);}
+  .booking-list{list-style:none; margin:0 0 6px; padding:0; font-size:15px; color:#222;}
+  .booking-list li{padding:4px 0; border-bottom:1px solid var(--border);}
+  .booking-list li:last-child{border-bottom:none;}
   .dropzone{
     border:2px dashed var(--border); border-radius:4px; padding:22px;
     text-align:center; font-size:15px; color:var(--gray); cursor:pointer;
@@ -64,10 +67,9 @@
   .result{margin-top:16px; border-radius:4px; padding:14px 16px; font-size:13px; display:none;}
   .result.ok{background:var(--green-light); color:var(--green); display:block;}
   .result.err{background:var(--red-light); color:var(--red); display:block;}
+  .result.pending{background:#F3F3F3; color:var(--gray); display:block;}
   .result ul{margin:8px 0 0; padding-left:18px;}
   .result li{margin-bottom:4px;}
-  .toggle{display:flex; gap:18px; margin-bottom:14px;}
-  .toggle label{font-size:16px; display:flex; align-items:center; gap:6px; cursor:pointer;}
   .summary{
     position:sticky; bottom:0; background:#fff; border-top:1px solid var(--border);
     padding:14px 22px; margin:24px -20px 0; display:flex; align-items:center;
@@ -100,6 +102,7 @@
     text-transform:uppercase; letter-spacing:0.5px;
   }
   #submit-btn:hover{ background:var(--blue); }
+  #submit-btn:disabled{ background:var(--gray); cursor:default; }
 </style>
 </head>
 <body>
@@ -115,12 +118,9 @@
   <div class="section" id="hotel-section">
     <h2>1. Hotel</h2>
     <span class="included-tag" id="hotel-tag" style="display:none;">In Ihrer Buchung enthalten</span>
-    <div class="toggle" id="hotel-toggle">
-      <label><input type="radio" name="hotel-yn" value="yes" onchange="toggleSection('hotel')"> Ja, Hotel buchen</label>
-      <label><input type="radio" name="hotel-yn" value="no" checked onchange="toggleSection('hotel')"> Nein</label>
-    </div>
-    <div id="hotel-body" style="display:none;">
+    <div id="hotel-body">
       <p class="hint">Hier sind die von Ihnen für die angegebenen Daten gebuchten Tickets. Nur die ausgewählten Buchungen werden geprüft.</p>
+      <ul class="booking-list" id="hotel-bookings" style="display:none;"></ul>
       <div class="date-row" id="hotel-dates"></div>
       <div style="margin:14px 0;">
         <a class="tpl" href="Hotel_Teilnehmer.xlsx" download>↓ Hotel-Vorlage herunterladen</a>
@@ -138,11 +138,7 @@
   <div class="section" id="voucher-section">
     <h2>2. Sales Lounge & VIP Café</h2>
     <span class="included-tag" id="voucher-tag" style="display:none;">In Ihrer Buchung enthalten</span>
-    <div class="toggle" id="voucher-toggle">
-      <label><input type="radio" name="voucher-yn" value="yes" onchange="toggleSection('voucher')"> Ja, Sales Lounge & VIP Café buchen</label>
-      <label><input type="radio" name="voucher-yn" value="no" checked onchange="toggleSection('voucher')"> Nein</label>
-    </div>
-    <div id="voucher-body" style="display:none;">
+    <div id="voucher-body">
       <p class="hint">Hier sind die von Ihnen für die angegebenen Daten gebuchten Tickets. Nur die ausgewählten Buchungen werden geprüft.</p>
       <div class="date-row" id="voucher-dates"></div>
       <div style="margin:14px 0;">
@@ -161,11 +157,7 @@
   <div class="section" id="driving-section">
     <h2>3. Driving Experience</h2>
     <span class="included-tag" id="driving-tag" style="display:none;">In Ihrer Buchung enthalten</span>
-    <div class="toggle" id="driving-toggle">
-      <label><input type="radio" name="driving-yn" value="yes" onchange="toggleSection('driving')"> Ja, Driving Experience buchen</label>
-      <label><input type="radio" name="driving-yn" value="no" checked onchange="toggleSection('driving')"> Nein</label>
-    </div>
-    <div id="driving-body" style="display:none;">
+    <div id="driving-body">
       <p class="hint">Hier sind die von Ihnen für die angegebenen Daten gebuchten Tickets. Nur die ausgewählten Buchungen werden geprüft.</p>
       <div class="date-row" id="driving-dates"></div>
       <div style="margin:14px 0;">
@@ -223,37 +215,42 @@
 </div>
 
 <script>
-// INITIALIZE THE PDF WORKER
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
 const EVENT_DATES = ["15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
 const state = { hotel:false, voucher:false, driving:false, sla:false };
-const rawFiles = { hotel:null, voucher:null, driving:null, sla:null }; // actual File objects, kept for submission
+const rawFiles = { hotel:null, voucher:null, driving:null, sla:null };
 
 // TODO: replace with your real Zapier Catch Hook webhook URL
 const WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/17616690/42majg9/";
 
-// ---- Read personalization params from the URL ----
+/* ------------------------------------------------------------------
+   URL PARAMETERS
+------------------------------------------------------------------ */
 const params = new URLSearchParams(window.location.search);
 function parseDatesParam(name){
   try { return params.get(name) ? JSON.parse(params.get(name)) : null; }
   catch(e){ return null; }
 }
 const personalized = {
-  hotel: params.get("hotel"),     // "yes" | "no" | null
+  hotel: params.get("hotel"),
   voucher: params.get("voucher"),
   driving: params.get("driving"),
   email: params.get("email"),
   name: params.get("name"),
-  hotelDates: parseDatesParam("hotelDates"),     // {"15.09.2026": 59, ...} or null
+  hotelDates: parseDatesParam("hotelDates"),
   voucherDates: parseDatesParam("voucherDates"),
   drivingDates: parseDatesParam("drivingDates"),
   sprache: params.get("sprache"),
   slaUrl: params.get("sla"),
-  rawHotelBookings: params.get("hotelBookings") // <-- validate hotel bookings
+  rawHotelBookings: params.get("hotelBookings")
 };
 const isPersonalizedMode = personalized.hotel !== null || personalized.voucher !== null || personalized.driving !== null;
 
-// ---- TRANSLATIONS DICTIONARY ----
+/* ------------------------------------------------------------------
+   TRANSLATIONS — every user-facing string, including all validation
+   errors, lives here and is selected by ?sprache=de|en
+------------------------------------------------------------------ */
 const TRANSLATIONS = {
   de: {
     title: "Personalisierung Ihrer Buchung",
@@ -261,20 +258,14 @@ const TRANSLATIONS = {
     greeting: (name) => `Hallo ${decodeURIComponent(name)}, hiermit erhalten Sie eine Übersicht über die von Ihnen gebuchten Programmpunkte, welche noch zu personalisieren sind. Bitte laden Sie hierzu unter dem jeweiligen Programmpunkt die entsprechende Vorlage herunter, ergänzen Sie diese um die erforderlichen Angaben und laden Sie die Datei anschließend wieder hoch. Bitte beachten Sie, dass die Anzahl der Datensätze in der Excel-Liste exakt der Anzahl Ihrer gebuchten Tickets entsprechen muss; andernfalls kann die Datei nicht hochgeladen werden. Sollten sich Ihre Bedarfe geändert haben, kontaktieren Sie uns bitte im Vorfeld unter: iaa@customer-side.mercedes-benz-truck-events.com.`,
     hotelTitle: "1. Hotel",
     hotelTag: "In Ihrer Buchung enthalten",
-    hotelYes: "Ja, Hotel buchen",
-    hotelNo: "Nein",
     hotelHint: "Hier finden Sie die von Ihnen gebuchten Übernachtungen. Bitte beachten Sie, dass auch nur diese geprüft werden.",
     hotelTemplate: "↓ Hotel-Vorlage herunterladen",
     voucherTitle: "2. Sales Lounge & VIP Café",
     voucherTag: "In Ihrer Buchung enthalten",
-    voucherYes: "Ja, Sales Lounge & VIP Café buchen",
-    voucherNo: "Nein",
     voucherHint: "Hier finden Sie die Anzahl an Vouchern, die Sie für die Sales Lounge & das VIP Café gebucht haben. Bitte beachten Sie, dass nur diese Anzahl geprüft wird.",
     voucherTemplate: "↓ Sales Lounge & VIP Café-Vorlage herunterladen",
     drivingTitle: "3. Driving Experience",
     drivingTag: "In Ihrer Buchung enthalten",
-    drivingYes: "Ja, Driving Experience buchen",
-    drivingNo: "Nein",
     drivingHint: "Hier finden Sie die Anzahl an Slots, die Sie für die Driving Experience gebucht haben. Bitte beachten Sie, dass nur diese Anzahl geprüft wird.",
     drivingTemplate: "↓ Driving Experience-Vorlage herunterladen",
     dropzone: "Excel-Datei hier ablegen oder klicken",
@@ -283,16 +274,54 @@ const TRANSLATIONS = {
     overallEmpty: "Keine Programmpunkte für diese Buchung gefunden.",
     formLockedText: "Der Absenden-Button wird aktiviert, sobald alle Listen oben erfolgreich geprüft wurden.",
     submitBtn: "Absenden",
+    submitting: "Wird gesendet...",
     submitStatusErr: "Beim Absenden ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder kontaktieren Sie uns.",
     thankYou: "Vielen Dank! Ihre Anmeldung wurde erfolgreich übermittelt.",
-    // SLA-specific translations
     slaTitle: "4. Service Level Agreement (SLA)",
     slaTag: "Erforderlich",
     slaHint: "Bitte laden Sie Ihr SLA herunter, unterschreiben Sie es und laden Sie es hier als PDF wieder hoch.",
+    slaHintNoLink: "Bitte laden Sie Ihr unterschriebenes SLA hier als PDF hoch.",
     slaDownload: "↓ Ununterschriebenes SLA herunterladen",
     slaDropzone: "Unterschriebenes SLA (PDF) hier ablegen oder klicken",
-    slaErrInvalidPdf: "Bitte laden Sie eine gültige PDF-Datei hoch.",
-    slaErrUnsigned: "Die hochgeladene Datei scheint das originale, nicht unterschriebene Dokument zu sein. Bitte laden Sie das eingescannte, unterschriebene Dokument hoch."
+    resultOk: "✓ Alles passt. Diese Liste ist bereit.",
+    resultErrHead: "✕ Bitte korrigieren:",
+    checking: "Datei wird geprüft…",
+    notValidatedYet: ": noch nicht erfolgreich geprüft.",
+    // Field labels used inside error messages
+    f: {
+      checkIn:"Check-In", checkOut:"Check-Out", hotel:"Hotel", firstName:"Vorname",
+      lastName:"Nachname", passport:"Reisepassnummer", date:"Datum", company:"Firma",
+      position:"Position", email:"Email", phone:"Handynummer", drivingType:"Fahr-Art",
+      license:"C_Klasse_Fuehrerschein"
+    },
+    e: {
+      notExcel: "Ungültiges Dateiformat. Bitte laden Sie eine Excel-Datei (.xlsx oder .xls) hoch.",
+      notPdf: "Ungültiges Dateiformat. Bitte laden Sie eine PDF-Datei hoch.",
+      readFail: "Die Datei konnte nicht gelesen werden. Bitte speichern Sie sie als .xlsx und laden Sie sie erneut hoch.",
+      noRows: "Die Datei enthält keine Datenzeilen unterhalb der Kopfzeile.",
+      emptyRow: (rn) => `Zeile ${rn}: Die Zeile ist leer. Bitte leere Zeilen zwischen den Datensätzen entfernen.`,
+      missing: (rn, field) => `Zeile ${rn}: ${field} fehlt.`,
+      dupPassport: (rn, pass) => `Zeile ${rn}: Die Reisepassnummer „${pass}“ wurde bereits verwendet. Jeder Gast darf nur einmal aufgeführt werden.`,
+      dupPerson: (rn, person, date) => `Zeile ${rn}: ${person} ist für den ${date} bereits eingetragen. Pro Person und Tag ist nur eine Zeile zulässig.`,
+      invalidDate: (rn, val) => `Zeile ${rn}: „${val || "(leer)"}“ ist kein gültiges Datum im Format TT.MM.JJJJ.`,
+      notEventDate: (rn, val) => `Zeile ${rn}: Das Datum „${val || "(leer)"}“ ist kein gültiges Eventdatum.`,
+      invalidRange: (rn, ci, co) => `Zeile ${rn}: Ungültiger Zeitraum (${ci} bis ${co}). Check-Out muss nach Check-In liegen.`,
+      nightOutside: (rn, d) => `Zeile ${rn}: Die Übernachtung am ${d} liegt außerhalb des Eventzeitraums.`,
+      hotelMismatch: (date, hotel, exp, found) => `${date} – ${hotel}: Erwartet wurden ${exp} Übernachtung(en), im Dokument gefunden wurden ${found}.`,
+      hotelUnbooked: (hotel, date) => `Das Dokument enthält eine Übernachtung im ${hotel} am ${date}, die nicht Teil Ihrer Buchung ist.`,
+      dateMismatch: (date, exp, found) => `${date}: Erwartet wurden ${exp} Person(en), gefunden wurden ${found}.`,
+      unexpectedDate: (date) => `Die Datei enthält Zeilen für den ${date}, der nicht Teil Ihrer Buchung ist.`,
+      noBookings: "Für Ihre Buchung wurden keine Hotelvorgaben übermittelt. Bitte kontaktieren Sie uns.",
+      noDatesSelected: "Bitte geben Sie mindestens ein Datum mit einer Personenzahl größer als 0 an.",
+      invalidEmail: (rn, val) => `Zeile ${rn}: Die E-Mail-Adresse „${val}“ ist ungültig. Erwartet wird das Format name@firma.de.`,
+      invalidPhone: (rn, val) => `Zeile ${rn}: Die Handynummer „${val}“ ist ungültig. Erwartet wird das Format +49… oder 01… mit 10–15 Ziffern.`,
+      invalidDrivingType: (rn, val) => `Zeile ${rn}: Fahr-Art muss „Selbstfahrer:in“ oder „Beifahrer:in“ sein (gefunden: „${val || "leer"}“).`,
+      invalidLicense: (rn, val) => `Zeile ${rn}: C_Klasse_Fuehrerschein muss „Ja“ oder „Nein“ sein (gefunden: „${val || "leer"}“).`,
+      licenseRequired: (rn) => `Zeile ${rn}: Bei „Selbstfahrer:in“ muss C_Klasse_Fuehrerschein „Ja“ sein.`,
+      slaUnsigned: "Im Dokument fehlt die Unterschrift des Kunden. Bitte unterschreiben Sie das SLA an allen vorgesehenen Stellen und laden Sie das unterschriebene Dokument erneut hoch.",
+      slaSigFieldEmpty: (n) => `Das Unterschriftsfeld „${n}“ ist nicht ausgefüllt. Bitte unterschreiben Sie an allen vorgesehenen Stellen.`,
+      slaUnreadable: "Das PDF konnte nicht gelesen werden. Bitte laden Sie ein gültiges, unterschriebenes PDF hoch."
+    }
   },
   en: {
     title: "Personalize your booking",
@@ -300,20 +329,14 @@ const TRANSLATIONS = {
     greeting: (name) => `Hello ${decodeURIComponent(name)}, here is an overview of the program items you have booked that still need to be personalized. Please download the corresponding template under the respective program item, add the required details, and then upload the file again. Please note that the number of data records in the Excel list must match the exact number of your booked tickets; otherwise, the file cannot be uploaded. If your requirements have changed, please contact us in advance at: iaa@customer-side.mercedes-benz-truck-events.com.`,
     hotelTitle: "1. Hotel",
     hotelTag: "Included in your booking",
-    hotelYes: "Yes, book Hotel",
-    hotelNo: "No",
     hotelHint: "Here you will find the overnight stays you have booked. Please note that only these numbers will be validated.",
     hotelTemplate: "↓ Download Hotel Template",
     voucherTitle: "2. Sales Lounge & VIP Café",
     voucherTag: "Included in your booking",
-    voucherYes: "Yes, book Sales Lounge & VIP Café",
-    voucherNo: "No",
     voucherHint: "Here you will find the number of vouchers you have booked for the Sales Lounge & the VIP Café. Please note that only these numbers will be validated.",
     voucherTemplate: "↓ Download Sales Lounge & VIP Café Template",
     drivingTitle: "3. Driving Experience",
     drivingTag: "Included in your booking",
-    drivingYes: "Yes, book Driving Experience",
-    drivingNo: "No",
     drivingHint: "Here you will find the number of slots you have booked for the Driving Experience. Please note that only these numbers will be validated.",
     drivingTemplate: "↓ Download Driving Experience Template",
     dropzone: "Drop Excel file here or click to upload",
@@ -322,76 +345,168 @@ const TRANSLATIONS = {
     overallEmpty: "No program items found for this booking.",
     formLockedText: "The submit button will be activated as soon as all lists above have been successfully validated.",
     submitBtn: "Submit",
+    submitting: "Submitting...",
     submitStatusErr: "An error occurred during submission. Please try again or contact us.",
     thankYou: "Thank you! Your registration has been successfully submitted.",
-    // SLA-specific translations
     slaTitle: "4. Service Level Agreement (SLA)",
     slaTag: "Required",
-    slaHint: "Please download your SLA, sign, and upload it back here as a PDF.",
+    slaHint: "Please download your SLA, sign it, and upload it back here as a PDF.",
+    slaHintNoLink: "Please upload your signed SLA here as a PDF.",
     slaDownload: "↓ Download Unsigned SLA",
     slaDropzone: "Drop signed SLA (PDF) here or click to upload",
-    slaErrInvalidPdf: "Please upload a valid PDF file.",
-    slaErrUnsigned: "The uploaded file appears to be the original, unsigned document. Please upload your scanned, signed document."
+    resultOk: "✓ Everything checks out. This list is ready.",
+    resultErrHead: "✕ Please correct the following:",
+    checking: "Checking file…",
+    notValidatedYet: ": not successfully validated yet.",
+    f: {
+      checkIn:"Check-in", checkOut:"Check-out", hotel:"Hotel", firstName:"First name",
+      lastName:"Last name", passport:"Passport number", date:"Date", company:"Company",
+      position:"Position", email:"Email", phone:"Mobile number", drivingType:"Driving type",
+      license:"Class C driving licence"
+    },
+    e: {
+      notExcel: "Invalid file format. Please upload an Excel file (.xlsx or .xls).",
+      notPdf: "Invalid file format. Please upload a PDF file.",
+      readFail: "The file could not be read. Please save it as .xlsx and upload it again.",
+      noRows: "The file contains no data rows below the header.",
+      emptyRow: (rn) => `Row ${rn}: This row is empty. Please remove empty rows between records.`,
+      missing: (rn, field) => `Row ${rn}: ${field} is missing.`,
+      dupPassport: (rn, pass) => `Row ${rn}: Passport number "${pass}" is already used. Each guest may only be listed once.`,
+      dupPerson: (rn, person, date) => `Row ${rn}: ${person} is already listed for ${date}. Only one row per person per date is allowed.`,
+      invalidDate: (rn, val) => `Row ${rn}: "${val || "(empty)"}" is not a valid date in the format DD.MM.YYYY.`,
+      notEventDate: (rn, val) => `Row ${rn}: The date "${val || "(empty)"}" is not a valid event date.`,
+      invalidRange: (rn, ci, co) => `Row ${rn}: Invalid date range (${ci} to ${co}). Check-out must be after check-in.`,
+      nightOutside: (rn, d) => `Row ${rn}: The overnight stay on ${d} falls outside the event period.`,
+      hotelMismatch: (date, hotel, exp, found) => `${date} – ${hotel}: Expected ${exp} overnight stay(s), found ${found} in the document.`,
+      hotelUnbooked: (hotel, date) => `The document contains a stay at ${hotel} on ${date} which is not part of your booking.`,
+      dateMismatch: (date, exp, found) => `${date}: Expected ${exp} person(s), found ${found}.`,
+      unexpectedDate: (date) => `The file contains rows for ${date}, which is not part of your booking.`,
+      noBookings: "No hotel allocation was submitted for your booking. Please contact us.",
+      noDatesSelected: "Please enter at least one date with a number of people greater than 0.",
+      invalidEmail: (rn, val) => `Row ${rn}: The email address "${val}" is invalid. Expected format: name@company.de.`,
+      invalidPhone: (rn, val) => `Row ${rn}: The mobile number "${val}" is invalid. Expected format: +49… or 01… with 10–15 digits.`,
+      invalidDrivingType: (rn, val) => `Row ${rn}: Driving type must be "Selbstfahrer:in" (self-driving) or "Beifahrer:in" (co-driver) — found: "${val || "empty"}".`,
+      invalidLicense: (rn, val) => `Row ${rn}: Class C driving licence must be "Ja" or "Nein" — found: "${val || "empty"}".`,
+      licenseRequired: (rn) => `Row ${rn}: For "Selbstfahrer:in" (self-driving) the Class C driving licence must be "Ja".`,
+      slaUnsigned: "The customer signature is missing. Please sign the SLA in all designated places and upload the signed document again.",
+      slaSigFieldEmpty: (n) => `The signature field "${n}" is empty. Please sign in all designated places.`,
+      slaUnreadable: "The PDF could not be read. Please upload a valid, signed PDF."
+    }
   }
 };
 
-// Retrieve Sprache from URL (defaulting to 'de' if missing or not 'en')
 const rawSprache = (params.get("sprache") || "de").toLowerCase();
 const lang = TRANSLATIONS[rawSprache] ? rawSprache : "de";
 const t = TRANSLATIONS[lang];
+const E = t.e;
+const F = t.f;
+document.documentElement.lang = lang;
 
-// PARSING FUNCTION FOR HOTEL BOOKINGS
-function parseHotelBookings(rawText) {
+/* ------------------------------------------------------------------
+   HELPERS
+------------------------------------------------------------------ */
+function pad2(n){ return String(n).padStart(2,"0"); }
+function fmtDate(d){ return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`; }
+
+// Accepts "DD.MM.YYYY", "DD/MM/YYYY", "YYYY-MM-DD", a JS Date (cellDates)
+// or an Excel serial number, and returns "DD.MM.YYYY" or null.
+function normalizeDate(value){
+  if(value === null || value === undefined || value === "") return null;
+  if(value instanceof Date && !isNaN(value)) return fmtDate(value);
+  if(typeof value === "number"){
+    const ms = Math.round((value - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    return isNaN(d) ? null : fmtDate(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  }
+  const s = String(value).trim();
+  let m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+  if(m) return `${pad2(m[1])}.${pad2(m[2])}.${m[3]}`;
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return `${pad2(m[3])}.${pad2(m[2])}.${m[1]}`;
+  return null;
+}
+function toDateObj(ddmmyyyy){
+  const p = ddmmyyyy.split(".");
+  return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+}
+function sortDates(a, b){ return toDateObj(a) - toDateObj(b); }
+
+// Reads a cell by any of the accepted German/English header names.
+function cell(row, names){
+  for(const n of names){
+    if(row[n] !== undefined && row[n] !== null && String(row[n]).trim() !== "") return row[n];
+  }
+  return "";
+}
+function str(row, names){ return String(cell(row, names) || "").trim(); }
+
+function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(String(v).trim()); }
+function isValidPhone(v){
+  const raw = String(v).trim().replace(/[\s\-()/.]/g, "");
+  if(!/^(\+49|0)\d+$/.test(raw)) return false;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+function titleCase(s){ return s.replace(/\b\w/g, c => c.toUpperCase()); }
+
+// Trailing empty rows are ignored; an empty row *between* records is an error.
+function trimRows(rows, errors){
+  let last = -1;
+  rows.forEach((r, i) => { if(!isEmptyRow(r)) last = i; });
+  if(last === -1){ errors.push(E.noRows); return []; }
+  const kept = rows.slice(0, last + 1);
+  kept.forEach((r, i) => { if(isEmptyRow(r)) errors.push(E.emptyRow(i + 2)); });
+  return kept;
+}
+function isEmptyRow(row){
+  return Object.values(row).every(v => v === null || v === undefined || String(v).trim() === "");
+}
+
+/* ------------------------------------------------------------------
+   HOTEL BOOKINGS FROM URL
+   Format per line: "15.09.2026 - 2 x Hotel 3 - Steigenberger"
+------------------------------------------------------------------ */
+function parseHotelBookings(rawText){
   const bookings = {};
-  if (!rawText) return bookings;
-
+  if(!rawText) return bookings;
   const lines = decodeURIComponent(rawText).split(/[\n•]/);
   lines.forEach(line => {
     const trimmed = line.trim();
-    if (!trimmed) return;
-
-    // Matches "[Date] - [Count] x [Optional Hotel ID] - [Hotel Name]"
+    if(!trimmed) return;
     const match = trimmed.match(/^(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d+)\s*x\s*(?:Hotel\s*\d+\s*-\s*)?(.+)$/i);
-    if (match) {
+    if(match){
       const date = match[1];
       const count = parseInt(match[2], 10);
       const hotelName = match[3].trim();
-
-      if (!bookings[date]) {
-        bookings[date] = {};
-      }
-      bookings[date][hotelName.toLowerCase()] = count;
+      if(!bookings[date]) bookings[date] = {};
+      bookings[date][hotelName.toLowerCase()] = (bookings[date][hotelName.toLowerCase()] || 0) + count;
     }
   });
-
   return bookings;
 }
+const DB_HOTEL_BOOKINGS = parseHotelBookings(personalized.rawHotelBookings);
 
+/* ------------------------------------------------------------------
+   RENDERING / PERSONALIZATION
+------------------------------------------------------------------ */
 function applyPersonalization(){
-  // --- TRANSLATE ALL INTERFACE TEXTS ON LOAD ---
   document.querySelector("h1").textContent = t.title;
   document.querySelector("p.lead").textContent = t.lead;
-  
+
   document.querySelector("#hotel-section h2").textContent = t.hotelTitle;
   document.querySelector("#hotel-tag").textContent = t.hotelTag;
-  document.querySelector("#hotel-toggle label:nth-child(1)").childNodes[1].nodeValue = " " + t.hotelYes;
-  document.querySelector("#hotel-toggle label:nth-child(2)").childNodes[1].nodeValue = " " + t.hotelNo;
   document.querySelector("#hotel-body .hint").textContent = t.hotelHint;
   document.querySelector("#hotel-body .tpl").textContent = t.hotelTemplate;
   document.querySelector("#hotel-drop").childNodes[0].nodeValue = t.dropzone;
 
   document.querySelector("#voucher-section h2").textContent = t.voucherTitle;
   document.querySelector("#voucher-tag").textContent = t.voucherTag;
-  document.querySelector("#voucher-toggle label:nth-child(1)").childNodes[1].nodeValue = " " + t.voucherYes;
-  document.querySelector("#voucher-toggle label:nth-child(2)").childNodes[1].nodeValue = " " + t.voucherNo;
   document.querySelector("#voucher-body .hint").textContent = t.voucherHint;
   document.querySelector("#voucher-body .tpl").textContent = t.voucherTemplate;
   document.querySelector("#voucher-drop").childNodes[0].nodeValue = t.dropzone;
 
   document.querySelector("#driving-section h2").textContent = t.drivingTitle;
   document.querySelector("#driving-tag").textContent = t.drivingTag;
-  document.querySelector("#driving-toggle label:nth-child(1)").childNodes[1].nodeValue = " " + t.drivingYes;
-  document.querySelector("#driving-toggle label:nth-child(2)").childNodes[1].nodeValue = " " + t.drivingNo;
   document.querySelector("#driving-body .hint").textContent = t.drivingHint;
   document.querySelector("#driving-body .tpl").textContent = t.drivingTemplate;
   document.querySelector("#driving-drop").childNodes[0].nodeValue = t.dropzone;
@@ -400,20 +515,20 @@ function applyPersonalization(){
   document.getElementById("submit-btn").textContent = t.submitBtn;
   document.querySelector("#thankyou-panel p").textContent = t.thankYou;
 
-  // --- SHOW AND CONFIGURE SLA SECTION IF PRESENT ---
-  if(personalized.slaUrl) {
-    document.getElementById("sla-section").style.display = "block";
-    document.getElementById("sla-header").textContent = t.slaTitle;
-    document.getElementById("sla-tag").textContent = t.slaTag;
-    document.getElementById("sla-hint").textContent = t.slaHint;
-    document.getElementById("sla-drop").childNodes[0].nodeValue = t.slaDropzone;
-    
-    const downloadLink = document.getElementById("sla-download-link");
+  // The SLA is always required. Only the download link depends on ?sla=.
+  document.getElementById("sla-section").style.display = "block";
+  document.getElementById("sla-header").textContent = t.slaTitle;
+  document.getElementById("sla-tag").textContent = t.slaTag;
+  document.getElementById("sla-hint").textContent = t.slaHint;
+  document.getElementById("sla-drop").childNodes[0].nodeValue = t.slaDropzone;
+  const downloadLink = document.getElementById("sla-download-link");
+  if(personalized.slaUrl){
     downloadLink.textContent = t.slaDownload;
     downloadLink.href = decodeURIComponent(personalized.slaUrl);
+  } else {
+    downloadLink.parentElement.style.display = "none";
+    document.getElementById("sla-hint").textContent = t.slaHintNoLink;
   }
-
-  if(!isPersonalizedMode) return;
 
   if(personalized.name){
     const g = document.getElementById("greeting");
@@ -421,66 +536,60 @@ function applyPersonalization(){
     g.textContent = t.greeting(personalized.name);
   }
 
-  ["hotel","voucher","driving"].forEach(key=>{
-    const required = personalized[key] === "yes";
+  // Sections come straight from the URL: booked items are shown and required,
+  // everything else is hidden. Without parameters all three are shown for manual entry.
+  ["hotel","voucher","driving"].forEach(key => {
+    const booked = isPersonalizedMode ? personalized[key] === "yes" : true;
     const section = document.getElementById(key+"-section");
-    const toggle = document.getElementById(key+"-toggle");
-    const tag = document.getElementById(key+"-tag");
-    const body = document.getElementById(key+"-body");
-
-    if(!required){
-      section.style.display = "none";
-      return;
-    }
-
-    toggle.style.display = "none";
-    tag.style.display = "inline-block";
-    body.style.display = "block";
-    document.querySelector(`input[name="${key}-yn"][value="yes"]`).checked = true;
+    if(!booked){ section.style.display = "none"; return; }
+    section.style.display = "block";
+    if(isPersonalizedMode) document.getElementById(key+"-tag").style.display = "inline-block";
     state[key] = false;
     renderDateFields(key);
   });
 
+  renderHotelBookingList();
   updateOverall();
 }
 
-function toggleSection(name){
-  const yes = document.querySelector(`input[name="${name}-yn"][value="yes"]`).checked;
-  document.getElementById(name+"-body").style.display = yes ? "block" : "none";
-  state[name] = false; // require re-validation
-  if(yes) renderDateFields(name);
-  updateOverall();
+// Shows the per-hotel, per-night allocation that hotel uploads are checked against.
+function renderHotelBookingList(){
+  const list = document.getElementById("hotel-bookings");
+  const dates = Object.keys(DB_HOTEL_BOOKINGS);
+  if(dates.length === 0) return;
+  list.innerHTML = "";
+  dates.sort(sortDates).forEach(d => {
+    Object.keys(DB_HOTEL_BOOKINGS[d]).forEach(h => {
+      const li = document.createElement("li");
+      li.textContent = `${d} — ${DB_HOTEL_BOOKINGS[d][h]} × ${titleCase(h)}`;
+      list.appendChild(li);
+    });
+  });
+  list.style.display = "block";
 }
 
-// Generic per-category date field renderer — used by Hotel, Voucher, Driving alike.
 function renderDateFields(category){
   const wrap = document.getElementById(category+"-dates");
   wrap.innerHTML = "";
-  const personalizedDates = personalized[category+"Dates"];
+  const booked = getBookedCounts(category);
 
-  if(isPersonalizedMode && personalizedDates){
-    // Only show the exact dates the partner booked, sorted chronologically, with locked counts
-    Object.keys(personalizedDates)
-      .sort((a, b) => {
-        // Parse "DD.MM.YYYY" to comparison-friendly Date objects
-        const parseDate = (dateStr) => {
-          const parts = dateStr.split('.');
-          return new Date(parts[2], parts[1] - 1, parts[0]);
-        };
-        return parseDate(a) - parseDate(b);
-      })
-      .forEach(d=>{
-        const count = personalizedDates[d];
-        const id = category+"-count-"+d.replace(/\./g,"");
-        const field = document.createElement("div");
-        field.className = "date-field";
-        field.innerHTML = `<span>${d}</span><input type="number" min="0" value="${count}" id="${id}" readonly style="background:#F3F3F3;">`;
-        wrap.appendChild(field);
-      });
+  if(isPersonalizedMode){
+    // Only the dates carried in the URL are shown, with locked counts.
+    if(!booked) return;
+    Object.keys(booked).sort(sortDates).forEach(d => {
+      const count = booked[d];
+      if(!count || count <= 0) return;
+      const id = category+"-count-"+d.replace(/\./g,"");
+      const field = document.createElement("div");
+      field.className = "date-field";
+      field.innerHTML = `<span>${d}</span><input type="number" min="0" value="${count}" id="${id}" readonly style="background:#F3F3F3;">`;
+      wrap.appendChild(field);
+    });
     return;
   }
-  // Fallback: manual mode, show all event dates, editable, default 0
-  EVENT_DATES.forEach(d=>{
+
+  // No URL parameters at all: manual entry across the full event period.
+  EVENT_DATES.forEach(d => {
     const id = category+"-count-"+d.replace(/\./g,"");
     const field = document.createElement("div");
     field.className = "date-field";
@@ -489,344 +598,464 @@ function renderDateFields(category){
   });
 }
 
+// The booked dates and counts for a category, taken from the URL only.
+// Hotel falls back to the per-night totals in ?hotelBookings when ?hotelDates is absent.
+function getBookedCounts(category){
+  const fromParam = personalized[category+"Dates"];
+  if(fromParam && Object.keys(fromParam).length) return fromParam;
+  if(category === "hotel" && Object.keys(DB_HOTEL_BOOKINGS).length){
+    const totals = {};
+    Object.keys(DB_HOTEL_BOOKINGS).forEach(d => {
+      totals[d] = Object.values(DB_HOTEL_BOOKINGS[d]).reduce((a, b) => a + b, 0);
+    });
+    return totals;
+  }
+  return null;
+}
+
+function getExpectedDateCounts(category){
+  const expected = {};
+  const booked = getBookedCounts(category);
+  const relevantDates = isPersonalizedMode ? Object.keys(booked || {}) : EVENT_DATES;
+  relevantDates.forEach(d => {
+    const input = document.getElementById(category+"-count-"+d.replace(/\./g,""));
+    const val = input ? (parseInt(input.value, 10) || 0) : 0;
+    if(val > 0) expected[d] = val;
+  });
+  return expected;
+}
+
+/* ------------------------------------------------------------------
+   FILE INTAKE — format check happens before anything is parsed
+------------------------------------------------------------------ */
 function setupDrop(prefix, handler){
   const drop = document.getElementById(prefix+"-drop");
   const input = document.getElementById(prefix+"-file");
-  input.addEventListener("change", e=>{ if(e.target.files[0]) handleFile(prefix, e.target.files[0], handler); });
-  drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("drag"); });
-  drop.addEventListener("dragleave", ()=> drop.classList.remove("drag"));
-  drop.addEventListener("drop", e=>{
+  input.addEventListener("change", e => { if(e.target.files[0]) handleFile(prefix, e.target.files[0], handler); });
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("drag"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+  drop.addEventListener("drop", e => {
     e.preventDefault(); drop.classList.remove("drag");
     if(e.dataTransfer.files[0]) handleFile(prefix, e.dataTransfer.files[0], handler);
   });
+}
+
+function isExcelFile(file){
+  return /\.(xlsx|xlsm|xls)$/i.test(file.name);
+}
+function isPdfFile(file){
+  return /\.pdf$/i.test(file.name) || file.type === "application/pdf";
 }
 
 function handleFile(prefix, file, handler){
   document.getElementById(prefix+"-filename").textContent = file.name;
   rawFiles[prefix] = file;
 
-  if (prefix === "sla") {
+  if(prefix === "sla"){
+    if(!isPdfFile(file)){ rawFiles.sla = null; showResult("sla", false, [E.notPdf]); return; }
+    showPending("sla");
     handler(file);
     return;
   }
 
+  if(!isExcelFile(file)){
+    rawFiles[prefix] = null;
+    showResult(prefix, false, [E.notExcel]);
+    return;
+  }
+
   const reader = new FileReader();
-  reader.onload = (e)=>{
+  reader.onload = (e) => {
     try{
-      const wb = XLSX.read(e.target.result, {type:"array"});
-      
-      // --- SWAP THIS CODE BLOCK TO AUTOMATICALLY FIND THE DATA SHEET ---
-      // Instead of just sheet 0, find the sheet name that doesn't say "instructions"
-      const targetSheetName = wb.SheetNames.find(name => name.toLowerCase() !== "instructions") || wb.SheetNames[0];
+      const wb = XLSX.read(e.target.result, { type:"array", cellDates:true });
+      const targetSheetName = wb.SheetNames.find(n => n.toLowerCase() !== "instructions") || wb.SheetNames[0];
       const sheet = wb.Sheets[targetSheetName];
-      // -----------------------------------------------------------------
-      
-      const rows = XLSX.utils.sheet_to_json(sheet, {defval:""});
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval:"" });
       handler(rows);
     }catch(err){
-      showResult(prefix, false, ["Datei konnte nicht gelesen werden. Bitte als .xlsx speichern und erneut hochladen."]);
+      showResult(prefix, false, [E.readFail]);
     }
   };
+  reader.onerror = () => showResult(prefix, false, [E.readFail]);
   reader.readAsArrayBuffer(file);
+}
+
+function showPending(prefix){
+  const el = document.getElementById(prefix+"-result");
+  el.className = "result pending";
+  el.textContent = t.checking;
 }
 
 function showResult(prefix, ok, messages){
   const el = document.getElementById(prefix+"-result");
   el.className = "result " + (ok ? "ok" : "err");
   if(ok){
-    el.innerHTML = "✓ Alles passt. Diese Liste ist bereit.";
+    el.textContent = t.resultOk;
   } else {
-    el.innerHTML = "✕ Bitte korrigieren:<ul>" + messages.map(m=>`<li>${m}</li>`).join("") + "</ul>";
+    el.innerHTML = t.resultErrHead + "<ul>" + messages.map(m => `<li>${escapeHtml(m)}</li>`).join("") + "</ul>";
   }
   state[prefix] = ok;
   updateOverall();
 }
-
-function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()); }
-function isValidPhone(v){ return /^(\+49|0)[1-9][0-9\s\-]{8,14}$/.test(String(v).trim()); }
-
-// Generic per-date expected/found comparator, shared logic for Hotel/Voucher/Driving
-function getExpectedDateCounts(category){
-  const expected = {};
-  const personalizedDates = personalized[category+"Dates"];
-  const relevantDates = (isPersonalizedMode && personalizedDates) ? Object.keys(personalizedDates) : EVENT_DATES;
-  relevantDates.forEach(d=>{
-    const input = document.getElementById(category+"-count-"+d.replace(/\./g,""));
-    const val = input ? (parseInt(input.value, 10) || 0) : 0;
-    if(val>0) expected[d]=val;
-  });
-  return expected;
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
+
+/* ------------------------------------------------------------------
+   HOTEL VALIDATION
+   – one row per guest, unique passport number
+   – every night between check-in and check-out counts as 1
+   – nights per date (and per hotel, if provided) must match the URL
+------------------------------------------------------------------ */
+const H = {
+  checkIn:["Check-In","Check-in","Check In","Checkin","Anreise","Arrival"],
+  checkOut:["Check-Out","Check-out","Check Out","Checkout","Abreise","Departure"],
+  hotel:["Hotel","Hotelname","Hotel Name"],
+  firstName:["Vorname","First Name","Firstname"],
+  lastName:["Nachname","Last Name","Lastname","Surname"],
+  passport:["Reisepassnummer","Passport Number","Passport No","Passnummer","Passport"]
+};
 
 function validateHotel(rows){
   const errors = [];
-  
-  // Parse expected records from database query
-  const dbBookings = parseHotelBookings(personalized.rawHotelBookings);
-  
-  if (Object.keys(dbBookings).length === 0) {
-    errors.push(lang === "de" 
-      ? "Keine Hotelbuchungen in den Datenbank-Vorgaben gefunden." 
-      : "No hotel booking found in the database."
-    );
+  const data = trimRows(rows, errors);
+  if(data.length === 0){ showResult("hotel", false, errors); return; }
+
+  const useHotelNames = Object.keys(DB_HOTEL_BOOKINGS).length > 0;
+  const expectedPerDate = getExpectedDateCounts("hotel");
+  if(!useHotelNames && Object.keys(expectedPerDate).length === 0){
+    errors.push(E.noBookings);
     showResult("hotel", false, errors);
     return;
   }
-  
-  const actualCounts = {};
 
-  rows.forEach((r, i) => {
+  const seenPassports = new Map();   // passport -> first row number
+  const nightsByDateHotel = {};      // "15.09.2026" -> { "steigenberger": 2 }
+  const nightsByDate = {};           // "15.09.2026" -> 2
+
+  data.forEach((r, i) => {
     const rn = i + 2;
-    
-    // Read cells accepting bilingual variations
-    const checkInRaw = String(r["Check-In"] || r["Check-in"] || "").trim();
-    const checkOutRaw = String(r["Check-Out"] || r["Check-out"] || "").trim();
-    const hotelName = String(r["Hotel"] || "").trim();
-    const vorname = String(r["Vorname"] || r["First Name"] || "").trim();
-    const nachname = String(r["Nachname"] || r["Last Name"] || "").trim();
-    const pass = String(r["Reisepassnummer"] || r["Passport Number"] || "").trim();
+    if(isEmptyRow(r)) return;
 
-    if(!checkInRaw && !checkOutRaw && !hotelName && !vorname && !nachname && !pass) return;
+    const checkInRaw  = str(r, H.checkIn);
+    const checkOutRaw = str(r, H.checkOut);
+    const hotelName   = str(r, H.hotel);
+    const vorname     = str(r, H.firstName);
+    const nachname    = str(r, H.lastName);
+    const pass        = str(r, H.passport);
 
-    if(!vorname) errors.push(lang === "de" ? `Zeile ${rn}: Vorname fehlt.` : `Row ${rn}: First name is missing.`);
-    if(!nachname) errors.push(lang === "de" ? `Zeile ${rn}: Nachname fehlt.` : `Row ${rn}: Last name is missing.`);
-    if(!pass) errors.push(lang === "de" ? `Zeile ${rn}: Reisepassnummer fehlt.` : `Row ${rn}: Passport number is missing.`);
-    if(!hotelName) {
-      errors.push(lang === "de" ? `Zeile ${rn}: Hotel fehlt.` : `Row ${rn}: Hotel name is missing.`);
-      return;
-    }
-    if(!checkInRaw || !checkOutRaw) {
-      errors.push(lang === "de" ? `Zeile ${rn}: Check-In oder Check-Out Datum fehlt.` : `Row ${rn}: Check-in or Check-out date is missing.`);
-      return;
-    }
+    if(!vorname)  errors.push(E.missing(rn, F.firstName));
+    if(!nachname) errors.push(E.missing(rn, F.lastName));
+    if(!pass)     errors.push(E.missing(rn, F.passport));
+    if(!hotelName) errors.push(E.missing(rn, F.hotel));
+    if(!checkInRaw)  errors.push(E.missing(rn, F.checkIn));
+    if(!checkOutRaw) errors.push(E.missing(rn, F.checkOut));
 
-    const parseDate = (str) => {
-      const p = str.split('.');
-      if (p.length !== 3) return null;
-      return new Date(p[2], p[1] - 1, p[0]);
-    };
-
-    const checkInDate = parseDate(checkInRaw);
-    const checkOutDate = parseDate(checkOutRaw);
-
-    if(!checkInDate || !checkOutDate || checkInDate >= checkOutDate) {
-      errors.push(lang === "de" ? `Zeile ${rn}: Ungültiger Zeitraum (${checkInRaw} bis ${checkOutRaw}).` : `Row ${rn}: Invalid date range (${checkInRaw} to ${checkOutRaw}).`);
-      return;
+    if(pass){
+      const key = pass.toUpperCase().replace(/\s+/g,"");
+      if(seenPassports.has(key)) errors.push(E.dupPassport(rn, pass));
+      else seenPassports.set(key, rn);
     }
 
-    // Map each individual night to verify counts
-    let current = new Date(checkInDate);
+    if(!hotelName || !checkInRaw || !checkOutRaw) return;
+
+    const ci = normalizeDate(cell(r, H.checkIn));
+    const co = normalizeDate(cell(r, H.checkOut));
+    if(!ci){ errors.push(E.invalidDate(rn, checkInRaw)); return; }
+    if(!co){ errors.push(E.invalidDate(rn, checkOutRaw)); return; }
+
+    const ciDate = toDateObj(ci);
+    const coDate = toDateObj(co);
+    if(ciDate >= coDate){ errors.push(E.invalidRange(rn, ci, co)); return; }
+
     const hotelLower = hotelName.toLowerCase();
-
-    while (current < checkOutDate) {
-      const day = String(current.getDate()).padStart(2, '0');
-      const month = String(current.getMonth() + 1).padStart(2, '0');
-      const year = current.getFullYear();
-      const formattedDate = `${day}.${month}.${year}`;
-
-      if (EVENT_DATES.includes(formattedDate)) {
-        if (!actualCounts[formattedDate]) {
-          actualCounts[formattedDate] = {};
-        }
-        actualCounts[formattedDate][hotelLower] = (actualCounts[formattedDate][hotelLower] || 0) + 1;
+    const current = new Date(ciDate);
+    while(current < coDate){
+      const night = fmtDate(current);
+      if(EVENT_DATES.includes(night)){
+        if(!nightsByDateHotel[night]) nightsByDateHotel[night] = {};
+        nightsByDateHotel[night][hotelLower] = (nightsByDateHotel[night][hotelLower] || 0) + 1;
+        nightsByDate[night] = (nightsByDate[night] || 0) + 1;
       } else {
-        errors.push(lang === "de" ? `Zeile ${rn}: Datum ${formattedDate} liegt außerhalb des Eventzeitraums.` : `Row ${rn}: Date ${formattedDate} falls outside the event timeframe.`);
+        errors.push(E.nightOutside(rn, night));
       }
-
       current.setDate(current.getDate() + 1);
     }
   });
 
-  // Cross-reference with database configuration
-  Object.keys(dbBookings).forEach(date => {
-    Object.keys(dbBookings[date]).forEach(hotel => {
-      const expectedCount = dbBookings[date][hotel];
-      const foundCount = (actualCounts[date] && actualCounts[date][hotel]) || 0;
-
-      if (foundCount !== expectedCount) {
-        const hotelDisplayName = hotel.replace(/\b\w/g, c => c.toUpperCase());
-        errors.push(lang === "de" 
-          ? `${date} - ${hotelDisplayName}: Erwartet wurden ${expectedCount} Buchung(en), im Dokument wurden jedoch ${foundCount} Übernachtung(en) gefunden.` 
-          : `${date} - ${hotelDisplayName}: Expected ${expectedCount} booking(s), but found ${foundCount} overnight stay(s) in the document.`
-        );
-      }
+  if(useHotelNames){
+    // Expected vs found, per night and per hotel
+    Object.keys(DB_HOTEL_BOOKINGS).forEach(date => {
+      Object.keys(DB_HOTEL_BOOKINGS[date]).forEach(hotel => {
+        const exp = DB_HOTEL_BOOKINGS[date][hotel];
+        const found = (nightsByDateHotel[date] && nightsByDateHotel[date][hotel]) || 0;
+        if(found !== exp) errors.push(E.hotelMismatch(date, titleCase(hotel), exp, found));
+      });
     });
-  });
-
-  // Flag unbooked or incorrect hotel names
-  Object.keys(actualCounts).forEach(date => {
-    Object.keys(actualCounts[date]).forEach(hotel => {
-      if (!dbBookings[date] || dbBookings[date][hotel] === undefined) {
-        const hotelDisplayName = hotel.replace(/\b\w/g, c => c.toUpperCase());
-        errors.push(lang === "de"
-          ? `Das Dokument enthält eine Buchung für das ${hotelDisplayName} am ${date}, welche nicht in Ihrer Buchung enthalten ist.`
-          : `The document contains a booking for ${hotelDisplayName} on ${date} which is not part of your original booking.`
-        );
-      }
+    // Nights in the file that were never booked
+    Object.keys(nightsByDateHotel).forEach(date => {
+      Object.keys(nightsByDateHotel[date]).forEach(hotel => {
+        if(!DB_HOTEL_BOOKINGS[date] || DB_HOTEL_BOOKINGS[date][hotel] === undefined){
+          errors.push(E.hotelUnbooked(titleCase(hotel), date));
+        }
+      });
     });
-  });
+  } else {
+    // Fallback: only per-night totals from ?hotelDates
+    Object.keys(expectedPerDate).forEach(date => {
+      const found = nightsByDate[date] || 0;
+      if(found !== expectedPerDate[date]) errors.push(E.dateMismatch(date, expectedPerDate[date], found));
+    });
+    Object.keys(nightsByDate).forEach(date => {
+      if(!expectedPerDate[date]) errors.push(E.unexpectedDate(date));
+    });
+  }
 
   showResult("hotel", errors.length === 0, errors);
 }
 
+/* ------------------------------------------------------------------
+   SALES LOUNGE & VIP CAFÉ VALIDATION
+------------------------------------------------------------------ */
+const V = {
+  date:["Datum","Date"],
+  firstName:["Vorname","First Name","Firstname"],
+  lastName:["Nachname","Last Name","Lastname","Surname"],
+  company:["Firma","Company"],
+  position:["Position","Job Title","Funktion"],
+  email:["Email","E-Mail","E-Mail-Adresse","Email Address"],
+  phone:["Handynummer","Mobile","Mobile Number","Telefon","Phone"]
+};
+
 function validateVoucher(rows){
   const errors = [];
-  const expected = getExpectedDateCounts("voucher");
-  if(Object.keys(expected).length===0){
-    errors.push("Bitte mindestens ein Datum mit Personenzahl > 0 angeben.");
-  }
-  const counts = {};
-  rows.forEach((r,i)=>{
-    const rn = i+2;
-    const datum = String(r["Datum"]||"").trim();
-    const vorname = String(r["Vorname"]||"").trim();
-    const nachname = String(r["Nachname"]||"").trim();
-    const firma = String(r["Firma"]||"").trim();
-    const position = String(r["Position"]||"").trim();
-    const email = String(r["Email"]||"").trim();
-    const handy = String(r["Handynummer"]||"").trim();
-    if(!datum && !vorname && !nachname && !firma && !position && !email && !handy) return;
+  const data = trimRows(rows, errors);
+  if(data.length === 0){ showResult("voucher", false, errors); return; }
 
-    if(!EVENT_DATES.includes(datum)){
-      errors.push(`Zeile ${rn}: Datum "${datum||"(leer)"}" ist kein gültiges Eventdatum.`);
-    } else {
-      counts[datum] = (counts[datum]||0)+1;
+  const expected = getExpectedDateCounts("voucher");
+  if(Object.keys(expected).length === 0) errors.push(E.noDatesSelected);
+
+  const counts = {};
+  const seen = new Set(); // person + date
+
+  data.forEach((r, i) => {
+    const rn = i + 2;
+    if(isEmptyRow(r)) return;
+
+    const datumRaw = str(r, V.date);
+    const vorname  = str(r, V.firstName);
+    const nachname = str(r, V.lastName);
+    const firma    = str(r, V.company);
+    const position = str(r, V.position);
+    const email    = str(r, V.email);
+    const handy    = str(r, V.phone);
+
+    if(!datumRaw) errors.push(E.missing(rn, F.date));
+    if(!vorname)  errors.push(E.missing(rn, F.firstName));
+    if(!nachname) errors.push(E.missing(rn, F.lastName));
+    if(!firma)    errors.push(E.missing(rn, F.company));
+    if(!position) errors.push(E.missing(rn, F.position));
+    if(!email)    errors.push(E.missing(rn, F.email));
+    else if(!isValidEmail(email)) errors.push(E.invalidEmail(rn, email));
+    if(!handy)    errors.push(E.missing(rn, F.phone));
+    else if(!isValidPhone(handy)) errors.push(E.invalidPhone(rn, handy));
+
+    if(datumRaw){
+      const datum = normalizeDate(cell(r, V.date));
+      if(!datum){ errors.push(E.invalidDate(rn, datumRaw)); return; }
+      if(!EVENT_DATES.includes(datum)){ errors.push(E.notEventDate(rn, datum)); return; }
+      counts[datum] = (counts[datum] || 0) + 1;
+
+      if(vorname && nachname){
+        const key = `${vorname.toLowerCase()}|${nachname.toLowerCase()}|${datum}`;
+        if(seen.has(key)) errors.push(E.dupPerson(rn, `${vorname} ${nachname}`, datum));
+        else seen.add(key);
+      }
     }
-    if(!vorname) errors.push(`Zeile ${rn}: Vorname fehlt.`);
-    if(!nachname) errors.push(`Zeile ${rn}: Nachname fehlt.`);
-    if(!firma) errors.push(`Zeile ${rn}: Firma fehlt.`);
-    if(!position) errors.push(`Zeile ${rn}: Position fehlt.`);
-    if(!email) errors.push(`Zeile ${rn}: Email fehlt.`);
-    else if(!isValidEmail(email)) errors.push(`Zeile ${rn}: Email "${email}" ist ungültig.`);
-    if(!handy) errors.push(`Zeile ${rn}: Handynummer fehlt.`);
-    else if(!isValidPhone(handy)) errors.push(`Zeile ${rn}: Handynummer "${handy}" hat ein ungültiges Format.`);
   });
-  Object.keys(expected).forEach(d=>{
-    const found = counts[d]||0;
-    if(found !== expected[d]){
-      errors.push(`${d}: erwartet ${expected[d]} Personen, gefunden ${found}.`);
-    }
+
+  Object.keys(expected).forEach(d => {
+    const found = counts[d] || 0;
+    if(found !== expected[d]) errors.push(E.dateMismatch(d, expected[d], found));
   });
-  Object.keys(counts).forEach(d=>{
-    if(!expected[d]) errors.push(`Datei enthält Zeilen für ${d}, das nicht im Formular ausgewählt wurde.`);
+  Object.keys(counts).forEach(d => {
+    if(!expected[d]) errors.push(E.unexpectedDate(d));
   });
-  showResult("voucher", errors.length===0, errors);
+
+  showResult("voucher", errors.length === 0, errors);
 }
+
+/* ------------------------------------------------------------------
+   DRIVING EXPERIENCE VALIDATION
+------------------------------------------------------------------ */
+const D = {
+  date:["Datum","Date"],
+  firstName:["Vorname","First Name","Firstname"],
+  lastName:["Nachname","Last Name","Lastname","Surname"],
+  type:["Fahr-Art","Fahrart","Driving Type","Driving-Type"],
+  license:["C_Klasse_Fuehrerschein","C_Klasse_Führerschein","Führerschein Klasse C","Class C Licence","Class C License","Driving Licence Class C"]
+};
+const SELF_DRIVE = ["selbstfahrer:in","selbstfahrerin","selbstfahrer","selbstfahren","self-driving","self driving","selfdriving","driver"];
+const CO_DRIVE   = ["beifahrer:in","beifahrerin","beifahrer","co-driver","co driver","passenger","mitfahrer:in","mitfahrer"];
+const YES_VALUES = ["ja","yes"];
+const NO_VALUES  = ["nein","no"];
 
 function validateDriving(rows){
   const errors = [];
-  const expected = getExpectedDateCounts("driving");
-  if(Object.keys(expected).length===0){
-    errors.push("Bitte mindestens ein Datum mit Personenzahl > 0 angeben.");
-  }
-  const counts = {};
-  rows.forEach((r,i)=>{
-    const rn = i+2;
-    const datum = String(r["Datum"]||"").trim();
-    const vorname = String(r["Vorname"]||"").trim();
-    const nachname = String(r["Nachname"]||"").trim();
-    const erlebnis = String(r["Fahr-Art"]||"").trim();
-    const lizenz = String(r["C_Klasse_Fuehrerschein"]||"").trim();
-    if(!datum && !vorname && !nachname && !erlebnis && !lizenz) return;
+  const data = trimRows(rows, errors);
+  if(data.length === 0){ showResult("driving", false, errors); return; }
 
-    if(!EVENT_DATES.includes(datum)){
-      errors.push(`Zeile ${rn}: Datum "${datum||"(leer)"}" ist kein gültiges Eventdatum.`);
-    } else {
-      counts[datum] = (counts[datum]||0)+1;
-    }
-    if(!vorname) errors.push(`Zeile ${rn}: Vorname fehlt.`);
-    if(!nachname) errors.push(`Zeile ${rn}: Nachname fehlt.`);
-    if(!["Selbstfahrer:in","Beifahrer:in"].includes(erlebnis)){
-      errors.push(`Zeile ${rn}: Fahr-Art muss "Selbstfahrer:in" oder "Beifahrer:in" sein (gefunden: "${erlebnis||"leer"}").`);
-    }
-    if(!["Ja","Nein"].includes(lizenz)){
-      errors.push(`Zeile ${rn}: C_Klasse_Fuehrerschein muss "Ja" oder "Nein" sein (gefunden: "${lizenz||"leer"}").`);
-    }
-    if(erlebnis === "selbstfahren" && lizenz !== "Ja"){
-      errors.push(`Zeile ${rn}: Bei "selbstfahren" muss C_Klasse_Fuehrerschein = "Ja" sein.`);
+  const expected = getExpectedDateCounts("driving");
+  if(Object.keys(expected).length === 0) errors.push(E.noDatesSelected);
+
+  const counts = {};
+  const seen = new Set();
+
+  data.forEach((r, i) => {
+    const rn = i + 2;
+    if(isEmptyRow(r)) return;
+
+    const datumRaw = str(r, D.date);
+    const vorname  = str(r, D.firstName);
+    const nachname = str(r, D.lastName);
+    const artRaw   = str(r, D.type);
+    const lizRaw   = str(r, D.license);
+    const art = artRaw.toLowerCase();
+    const liz = lizRaw.toLowerCase();
+
+    if(!datumRaw) errors.push(E.missing(rn, F.date));
+    if(!vorname)  errors.push(E.missing(rn, F.firstName));
+    if(!nachname) errors.push(E.missing(rn, F.lastName));
+    if(!artRaw)   errors.push(E.missing(rn, F.drivingType));
+    if(!lizRaw)   errors.push(E.missing(rn, F.license));
+
+    const isSelf = SELF_DRIVE.includes(art);
+    const isCo   = CO_DRIVE.includes(art);
+    if(artRaw && !isSelf && !isCo) errors.push(E.invalidDrivingType(rn, artRaw));
+
+    const licenceYes = YES_VALUES.includes(liz);
+    const licenceNo  = NO_VALUES.includes(liz);
+    if(lizRaw && !licenceYes && !licenceNo) errors.push(E.invalidLicense(rn, lizRaw));
+
+    // Self-drivers must hold a class C licence
+    if(isSelf && !licenceYes) errors.push(E.licenseRequired(rn));
+
+    if(datumRaw){
+      const datum = normalizeDate(cell(r, D.date));
+      if(!datum){ errors.push(E.invalidDate(rn, datumRaw)); return; }
+      if(!EVENT_DATES.includes(datum)){ errors.push(E.notEventDate(rn, datum)); return; }
+      counts[datum] = (counts[datum] || 0) + 1;
+
+      if(vorname && nachname){
+        const key = `${vorname.toLowerCase()}|${nachname.toLowerCase()}|${datum}`;
+        if(seen.has(key)) errors.push(E.dupPerson(rn, `${vorname} ${nachname}`, datum));
+        else seen.add(key);
+      }
     }
   });
-  Object.keys(expected).forEach(d=>{
-    const found = counts[d]||0;
-    if(found !== expected[d]){
-      errors.push(`${d}: erwartet ${expected[d]} Personen, gefunden ${found}.`);
-    }
+
+  Object.keys(expected).forEach(d => {
+    const found = counts[d] || 0;
+    if(found !== expected[d]) errors.push(E.dateMismatch(d, expected[d], found));
   });
-  Object.keys(counts).forEach(d=>{
-    if(!expected[d]) errors.push(`Datei enthält Zeilen für ${d}, das nicht im Formular ausgewählt wurde.`);
+  Object.keys(counts).forEach(d => {
+    if(!expected[d]) errors.push(E.unexpectedDate(d));
   });
-  showResult("driving", errors.length===0, errors);
+
+  showResult("driving", errors.length === 0, errors);
 }
 
-function validateSLA(file) {
-  const errors = [];
+/* ------------------------------------------------------------------
+   SLA VALIDATION
+   Signed = filled AcroForm signature fields, OR ink/stamp annotations,
+   OR added image content compared with the unsigned original.
+------------------------------------------------------------------ */
+const SIG_PLACEHOLDERS = ["unterschrift kunde","unterschrift des kunden","customer signature","signature customer"];
 
-  // 1. Enforce PDF extension
-  if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
-    errors.push(t.slaErrInvalidPdf);
-    showResult("sla", false, errors);
-    return;
+async function readPdfProfile(data){
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const profile = { sigFields: [], filledSig: 0, inkOrStamp: 0, images: 0, text: "", pages: pdf.numPages };
+  for(let i = 1; i <= pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const anns = await page.getAnnotations({ intent: "display" });
+    anns.forEach(a => {
+      if(a.fieldType === "Sig"){
+        profile.sigFields.push(a.fieldName || a.alternativeText || `#${profile.sigFields.length + 1}`);
+        if(a.fieldValue) profile.filledSig++;
+      }
+      if(a.subtype === "Ink" || a.subtype === "Stamp" || a.subtype === "FreeText") profile.inkOrStamp++;
+    });
+    const ops = await page.getOperatorList();
+    const imgOps = [
+      pdfjsLib.OPS.paintImageXObject,
+      pdfjsLib.OPS.paintJpegXObject,
+      pdfjsLib.OPS.paintInlineImage,
+      pdfjsLib.OPS.paintImageMaskXObject
+    ].filter(x => x !== undefined);
+    ops.fnArray.forEach(fn => { if(imgOps.includes(fn)) profile.images++; });
+    const tc = await page.getTextContent();
+    profile.text += " " + tc.items.map(it => it.str).join(" ");
   }
+  profile.text = profile.text.toLowerCase();
+  return profile;
+}
 
-  const fileReader = new FileReader();
-  fileReader.onload = async function() {
-    try {
-      const typedarray = new Uint8Array(this.result);
-      const pdf = await pdfjsLib.getDocument(typedarray).promise;
+async function getOriginalProfile(){
+  if(!personalized.slaUrl) return null;
+  try{
+    const res = await fetch(decodeURIComponent(personalized.slaUrl));
+    if(!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    return await readPdfProfile(new Uint8Array(buf));
+  }catch(e){
+    return null;
+  }
+}
 
-      // Check A: Standard digital signature info in metadata block
-      let isDigitallySigned = false;
-      const metadata = await pdf.getMetadata();
-      if (metadata && metadata.info && metadata.info.Signature) {
-        isDigitallySigned = true;
-      }
+function validateSLA(file){
+  if(!isPdfFile(file)){ showResult("sla", false, [E.notPdf]); return; }
 
-      // Check B: Interactive PDF Sign Form Field Widget checks
-      const annotations = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const pageAnns = await page.getAnnotations();
-        annotations.push(...pageAnns);
-      }
-      const hasCompletedSigField = annotations.some(ann => 
-        (ann.fieldType === 'Sig' && ann.fieldValue) || 
-        (ann.subtype === 'Widget' && ann.fieldType === 'Sig')
-      );
+  const reader = new FileReader();
+  reader.onload = async function(){
+    const errors = [];
+    try{
+      const uploaded = await readPdfProfile(new Uint8Array(this.result));
 
-      // Check C: Flat scan verification (Checks for handwriting / dates)
-      // When physically signed & scanned back, flat images override raw layout strings.
-      // We read the selectable text layer to verify if placeholders are still searchable.
-      let fullText = "";
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        fullText += textContent.items.map(item => item.str).join(" ");
-      }
+      if(uploaded.sigFields.length > 0){
+        // Digital signature fields present: every one of them must be filled.
+        if(uploaded.filledSig < uploaded.sigFields.length){
+          uploaded.sigFields.forEach((name, idx) => {
+            if(idx >= uploaded.filledSig) errors.push(E.slaSigFieldEmpty(name));
+          });
+        }
+      } else {
+        const hasPlaceholderText = SIG_PLACEHOLDERS.some(p => uploaded.text.includes(p));
+        const hasDrawnSignature = uploaded.inkOrStamp > 0;
+        const original = await getOriginalProfile();
 
-      const hasSignaturePlaceholdersText = 
-        fullText.includes("Unterschrift Kunde") || 
-        fullText.includes("Customer Signature");
-
-      // Validate SLA rule logic
-      if (!isDigitallySigned && !hasCompletedSigField && hasSignaturePlaceholdersText) {
-        errors.push(t.slaErrUnsigned);
-      }
-
-    } catch (e) {
-      console.error("SLA internal signature parser error: ", e);
-      // Fallback: Use original filename matching logic
-      if (personalized.slaUrl) {
-        const originalFileName = decodeURIComponent(personalized.slaUrl).split('/').pop();
-        if (file.name === originalFileName) {
-          errors.push(t.slaErrUnsigned);
+        if(hasDrawnSignature){
+          // hand-drawn / stamped signature present — accept
+        } else if(original){
+          // Signed scans and pasted signature images add graphics to the original.
+          const addedGraphics = uploaded.images > original.images;
+          const isScan = uploaded.text.trim().length < original.text.trim().length * 0.5;
+          if(!addedGraphics && !isScan) errors.push(E.slaUnsigned);
+        } else if(hasPlaceholderText && uploaded.images === 0){
+          // Original text layer intact and nothing added on top
+          errors.push(E.slaUnsigned);
+        } else if(hasPlaceholderText && personalized.slaUrl){
+          const originalFileName = decodeURIComponent(personalized.slaUrl).split("/").pop().split("?")[0];
+          if(file.name === originalFileName) errors.push(E.slaUnsigned);
         }
       }
+    }catch(e){
+      console.error("SLA signature check failed:", e);
+      errors.push(E.slaUnreadable);
     }
-
     showResult("sla", errors.length === 0, errors);
   };
-
-  fileReader.readAsArrayBuffer(file);
+  reader.onerror = () => showResult("sla", false, [E.slaUnreadable]);
+  reader.readAsArrayBuffer(file);
 }
 
 setupDrop("hotel", validateHotel);
@@ -834,6 +1063,9 @@ setupDrop("voucher", validateVoucher);
 setupDrop("driving", validateDriving);
 setupDrop("sla", validateSLA);
 
+/* ------------------------------------------------------------------
+   OVERALL STATUS + SUBMIT
+------------------------------------------------------------------ */
 function updateOverall(){
   const active = [];
   if(isPersonalizedMode){
@@ -841,21 +1073,15 @@ function updateOverall(){
     if(personalized.voucher === "yes") active.push("voucher");
     if(personalized.driving === "yes") active.push("driving");
   } else {
-    if(document.querySelector('input[name="hotel-yn"][value="yes"]').checked) active.push("hotel");
-    if(document.querySelector('input[name="voucher-yn"][value="yes"]').checked) active.push("voucher");
-    if(document.querySelector('input[name="driving-yn"][value="yes"]').checked) active.push("driving");
+    active.push("hotel", "voucher", "driving");
   }
-
-  // Require SLA document validation if the SLA link is part of this personalized workflow
-  if(personalized.slaUrl) {
-    active.push("sla");
-  }
+  active.push("sla"); // the signed SLA is always required
 
   const statusEl = document.getElementById("overall-status");
   const lockReasons = document.getElementById("lock-reasons");
   lockReasons.innerHTML = "";
 
-  if(active.length===0){
+  if(active.length === 0){
     statusEl.textContent = t.overallEmpty;
     statusEl.className = "status gray";
     lockReasons.innerHTML = `<li>${t.overallEmpty}</li>`;
@@ -863,25 +1089,19 @@ function updateOverall(){
     return;
   }
 
-  const labels = { 
-    hotel: t.hotelTitle, 
-    voucher: t.voucherTitle, 
-    driving: t.drivingTitle,
-    sla: t.slaTitle
-  };
-  const pending = active.filter(a=>!state[a]);
+  const labels = { hotel:t.hotelTitle, voucher:t.voucherTitle, driving:t.drivingTitle, sla:t.slaTitle };
+  const pending = active.filter(a => !state[a]);
 
-  const allOk = pending.length === 0;
-  if(allOk){
+  if(pending.length === 0){
     statusEl.textContent = t.overallValid;
     statusEl.className = "status green";
     setFormLocked(false);
   } else {
     statusEl.textContent = t.overallPending;
     statusEl.className = "status red";
-    pending.forEach(p=>{
+    pending.forEach(p => {
       const li = document.createElement("li");
-      li.textContent = labels[p] + (lang === "de" ? ": noch nicht erfolgreich geprüft." : ": not successfully validated yet.");
+      li.textContent = labels[p] + t.notValidatedYet;
       lockReasons.appendChild(li);
     });
     setFormLocked(true);
@@ -889,41 +1109,32 @@ function updateOverall(){
 }
 
 function setFormLocked(locked){
-  const lockedPanel = document.getElementById("form-locked");
-  const submitPanel = document.getElementById("submit-panel");
-  if(locked){
-    lockedPanel.style.display = "block";
-    submitPanel.style.display = "none";
-  } else {
-    lockedPanel.style.display = "none";
-    submitPanel.style.display = "block";
-  }
+  document.getElementById("form-locked").style.display = locked ? "block" : "none";
+  document.getElementById("submit-panel").style.display = locked ? "none" : "block";
 }
 
 async function submitAll(){
   const btn = document.getElementById("submit-btn");
   const statusEl = document.getElementById("submit-status");
   btn.disabled = true;
-  btn.textContent = lang === "de" ? "Wird gesendet..." : "Submitting...";
+  btn.textContent = t.submitting;
   statusEl.textContent = "";
 
   try{
     const formData = new FormData();
     formData.append("email", personalized.email || "");
     formData.append("name", personalized.name || "");
+    formData.append("sprache", lang);
     formData.append("hotel", personalized.hotel || "no");
     formData.append("voucher", personalized.voucher || "no");
     formData.append("driving", personalized.driving || "no");
 
-    if(rawFiles.hotel) formData.append("hotelFile", rawFiles.hotel, rawFiles.hotel.name);
+    if(rawFiles.hotel)   formData.append("hotelFile", rawFiles.hotel, rawFiles.hotel.name);
     if(rawFiles.voucher) formData.append("voucherFile", rawFiles.voucher, rawFiles.voucher.name);
     if(rawFiles.driving) formData.append("drivingFile", rawFiles.driving, rawFiles.driving.name);
-    
-    // Send the signed SLA PDF back to Zapier hook
-    if(rawFiles.sla) formData.append("slaFile", rawFiles.sla, rawFiles.sla.name);
+    if(rawFiles.sla)     formData.append("slaFile", rawFiles.sla, rawFiles.sla.name);
 
-    const res = await fetch(WEBHOOK_URL, { method: "POST", body: formData });
-
+    const res = await fetch(WEBHOOK_URL, { method:"POST", body:formData });
     if(!res.ok) throw new Error("Webhook responded with status " + res.status);
 
     document.getElementById("submit-panel").style.display = "none";
