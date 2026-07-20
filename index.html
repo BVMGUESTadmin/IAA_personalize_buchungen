@@ -1171,17 +1171,28 @@ async function submitAll(){
 
   try{
     const formData = new FormData();
-    formData.append("email", personalized.email || "");
-    formData.append("name", personalized.name || "");
-    formData.append("sprache", lang);
-    formData.append("hotel", personalized.hotel || "no");
-    formData.append("voucher", personalized.voucher || "no");
-    formData.append("driving", personalized.driving || "no");
 
-    if(rawFiles.hotel)   formData.append("hotelFile", rawFiles.hotel, rawFiles.hotel.name);
+// never send "" — Zapier drops empty keys from the sample payload
+    formData.append("email",    personalized.email ? decodeURIComponent(personalized.email) : "none");
+    formData.append("name",     personalized.name  ? decodeURIComponent(personalized.name)  : "none");
+    formData.append("sprache",  lang);
+    formData.append("hotel",    personalized.hotel    || "no");
+    formData.append("voucher",  personalized.voucher  || "no");
+    formData.append("driving",  personalized.driving  || "no");
+    formData.append("slaUrl",   personalized.slaUrl ? decodeURIComponent(personalized.slaUrl) : "none");
+    formData.append("submittedAt", new Date().toISOString());
+    formData.append("pageUrl",  window.location.href);
+
+// placeholders keep the keys visible in Zapier even when a section isn't booked
+    formData.append("hotelFileName",   rawFiles.hotel   ? rawFiles.hotel.name   : "none");
+    formData.append("voucherFileName", rawFiles.voucher ? rawFiles.voucher.name : "none");
+    formData.append("drivingFileName", rawFiles.driving ? rawFiles.driving.name : "none");
+    formData.append("slaFileName",     rawFiles.sla     ? rawFiles.sla.name     : "none");
+
+    if(rawFiles.hotel)   formData.append("hotelFile",   rawFiles.hotel,   rawFiles.hotel.name);
     if(rawFiles.voucher) formData.append("voucherFile", rawFiles.voucher, rawFiles.voucher.name);
     if(rawFiles.driving) formData.append("drivingFile", rawFiles.driving, rawFiles.driving.name);
-    if(rawFiles.sla)     formData.append("slaFile", rawFiles.sla, rawFiles.sla.name);
+    if(rawFiles.sla)     formData.append("slaFile",     rawFiles.sla,     rawFiles.sla.name);
 
     const res = await fetch(WEBHOOK_URL, { method:"POST", body:formData });
     if(!res.ok) throw new Error("Webhook responded with status " + res.status);
