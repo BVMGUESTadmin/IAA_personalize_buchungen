@@ -321,7 +321,9 @@ const TRANSLATIONS = {
       licenseRequired: (rn) => `Zeile ${rn}: Bei „Selbstfahrer:in“ muss C_Klasse_Fuehrerschein „Ja“ sein.`,
       slaUnsigned: "Im Dokument fehlt die Unterschrift des Kunden. Bitte unterschreiben Sie das SLA an allen vorgesehenen Stellen und laden Sie das unterschriebene Dokument erneut hoch.",
       slaSigFieldEmpty: (n) => `Das Unterschriftsfeld „${n}“ ist nicht ausgefüllt. Bitte unterschreiben Sie an allen vorgesehenen Stellen.`,
-      slaUnreadable: "Das PDF konnte nicht gelesen werden. Bitte laden Sie ein gültiges, unterschriebenes PDF hoch."
+      slaUnreadable: "Das PDF konnte nicht gelesen werden. Bitte laden Sie ein gültiges, unterschriebenes PDF hoch.",
+      slaWrongTemplate: "Das hochgeladene PDF stimmt nicht mit dem zum Download angebotenen SLA-Dokument überein. Bitte unterschreiben Sie das heruntergeladene SLA und laden Sie genau dieses Dokument hoch.",
+      slaFetchFailed: "Die SLA-Vorlage konnte zum Abgleich nicht geladen werden, daher kann das Dokument nicht geprüft werden. Bitte laden Sie die Seite neu und versuchen Sie es erneut oder kontaktieren Sie uns."
     }
   },
   en: {
@@ -392,7 +394,9 @@ const TRANSLATIONS = {
       licenseRequired: (rn) => `Row ${rn}: For "Selbstfahrer:in" (self-driving) the Class C driving licence must be "Ja".`,
       slaUnsigned: "The customer signature is missing. Please sign the SLA in all designated places and upload the signed document again.",
       slaSigFieldEmpty: (n) => `The signature field "${n}" is empty. Please sign in all designated places.`,
-      slaUnreadable: "The PDF could not be read. Please upload a valid, signed PDF."
+      slaUnreadable: "The PDF could not be read. Please upload a valid, signed PDF.",
+      slaWrongTemplate: "The uploaded PDF does not match the SLA document offered for download. Please sign the downloaded SLA and upload that exact document.",
+      slaFetchFailed: "The SLA template could not be loaded for comparison, so the document cannot be verified. Please reload the page and try again, or contact us."
     }
   }
 };
@@ -1020,6 +1024,28 @@ function validateDriving(rows){
    OR added image content compared with the unsigned original.
 ------------------------------------------------------------------ */
 const SIG_PLACEHOLDERS = ["unterschrift kunde","unterschrift des kunden","customer signature","signature customer"];
+const SLA_MATCH_THRESHOLD = 0.6;
+
+function fingerprintTokens(text){
+  return new Set(
+    String(text)
+      .toLowerCase()
+      .replace(/[^a-z0-9äöüß]+/g, " ")
+      .split(" ")
+      .filter(w => w.length >= 4)   // ignore short/common words
+  );
+}
+
+// Fraction of the template's words that also appear in the upload.
+// A filled/signed template keeps its text layer → ~1.0; a random PDF → low.
+function templateCoverage(templateText, uploadedText){
+  const tmpl = fingerprintTokens(templateText);
+  if(tmpl.size === 0) return 1;   // template has no readable text to match
+  const up = fingerprintTokens(uploadedText);
+  let hit = 0;
+  tmpl.forEach(w => { if(up.has(w)) hit++; });
+  return hit / tmpl.size;
+}
 
 async function readPdfProfile(data){
   const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -1049,13 +1075,16 @@ async function readPdfProfile(data){
   return profile;
 }
 
+let _originalProfileCache = null;
 async function getOriginalProfile(){
+  if(_originalProfileCache) return _originalProfileCache;
   if(!personalized.slaUrl) return null;
   try{
     const res = await fetch(decodeURIComponent(personalized.slaUrl));
     if(!res.ok) return null;
     const buf = await res.arrayBuffer();
-    return await readPdfProfile(new Uint8Array(buf));
+    _originalProfileCache = await readPdfProfile(new Uint8Array(buf));
+    return _originalProfileCache;
   }catch(e){
     return null;
   }
@@ -1066,42 +1095,67 @@ function validateSLA(file){
 
   const reader = new FileReader();
   reader.onload = async function(){
-    const errors = [];
     try{
       const uploaded = await readPdfProfile(new Uint8Array(this.result));
+      const hasTemplate = !!personalized.slaUrl;
+      const original = await getOriginalProfile();
 
-      if(uploaded.sigFields.length > 0){
-        // Digital signature fields present: every one of them must be filled.
+      // A template URL is configured but couldn't be loaded → we cannot verify.
+      // Fail loudly instead of letting the document through.
+      if(hasTemplate && !original){
+        showResult("sla", false, [E.slaFetchFailed]);
+        return;
+      }
+
+      const errors = [];
+
+      // ---- 1) IDENTITY: is this actually the SLA template? ----
+      let looksLikeScan = false;
+      if(original){
+        const origLen = original.text.trim().length;
+        const upLen   = uploaded.text.trim().length;
+        looksLikeScan = origLen > 200 && upLen < origLen * 0.3;
+
+        if(looksLikeScan){
+          // Printed + scanned: no usable text layer. Without OCR the best
+          // identity check is that it has the template's page count.
+          if(uploaded.pages !== original.pages){
+            showResult("sla", false, [E.slaWrongTemplate]);
+            return;
+          }
+        } else {
+          // Text layer intact → it must contain most of the template's words.
+          if(templateCoverage(original.text, uploaded.text) < SLA_MATCH_THRESHOLD){
+            showResult("sla", false, [E.slaWrongTemplate]);
+            return;
+          }
+        }
+      }
+
+      // ---- 2) SIGNATURE: has something been signed on top of the template? ----
+      const hasSigFields   = uploaded.sigFields.length > 0;
+      const hasDrawnSig    = uploaded.inkOrStamp > 0;
+      const addedGraphics  = original ? (uploaded.images > original.images)
+                                      : (uploaded.images > 0);
+
+      if(hasSigFields){
+        // Every AcroForm signature field must be filled.
         if(uploaded.filledSig < uploaded.sigFields.length){
           uploaded.sigFields.forEach((name, idx) => {
             if(idx >= uploaded.filledSig) errors.push(E.slaSigFieldEmpty(name));
           });
         }
-      } else {
-        const hasPlaceholderText = SIG_PLACEHOLDERS.some(p => uploaded.text.includes(p));
-        const hasDrawnSignature = uploaded.inkOrStamp > 0;
-        const original = await getOriginalProfile();
-
-        if(hasDrawnSignature){
-          // hand-drawn / stamped signature present — accept
-        } else if(original){
-          // Signed scans and pasted signature images add graphics to the original.
-          const addedGraphics = uploaded.images > original.images;
-          const isScan = uploaded.text.trim().length < original.text.trim().length * 0.5;
-          if(!addedGraphics && !isScan) errors.push(E.slaUnsigned);
-        } else if(hasPlaceholderText && uploaded.images === 0){
-          // Original text layer intact and nothing added on top
-          errors.push(E.slaUnsigned);
-        } else if(hasPlaceholderText && personalized.slaUrl){
-          const originalFileName = decodeURIComponent(personalized.slaUrl).split("/").pop().split("?")[0];
-          if(file.name === originalFileName) errors.push(E.slaUnsigned);
-        }
+      } else if(looksLikeScan){
+        // Scan of a signed printout — accepted once the page count matched above.
+      } else if(!hasDrawnSig && !addedGraphics){
+        errors.push(E.slaUnsigned);
       }
+
+      showResult("sla", errors.length === 0, errors);
     }catch(e){
       console.error("SLA signature check failed:", e);
-      errors.push(E.slaUnreadable);
+      showResult("sla", false, [E.slaUnreadable]);
     }
-    showResult("sla", errors.length === 0, errors);
   };
   reader.onerror = () => showResult("sla", false, [E.slaUnreadable]);
   reader.readAsArrayBuffer(file);
