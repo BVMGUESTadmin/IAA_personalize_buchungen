@@ -1024,27 +1024,30 @@ function validateDriving(rows){
    OR added image content compared with the unsigned original.
 ------------------------------------------------------------------ */
 const SIG_PLACEHOLDERS = ["unterschrift kunde","unterschrift des kunden","customer signature","signature customer"];
-const SLA_MATCH_THRESHOLD = 0.6;
+const SLA_COVERAGE_THRESHOLD = 0.99;
 
-function fingerprintTokens(text){
-  return new Set(
-    String(text)
-      .toLowerCase()
-      .replace(/[^a-z0-9äöüß]+/g, " ")
-      .split(" ")
-      .filter(w => w.length >= 4)   // ignore short/common words
-  );
+function slaTokens(text){
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9äöüß_]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
-// Fraction of the template's words that also appear in the upload.
-// A filled/signed template keeps its text layer → ~1.0; a random PDF → low.
-function templateCoverage(templateText, uploadedText){
-  const tmpl = fingerprintTokens(templateText);
-  if(tmpl.size === 0) return 1;   // template has no readable text to match
-  const up = fingerprintTokens(uploadedText);
+function slaShingles(tokens, n = 3){
+  const set = new Set();
+  for(let i = 0; i + n <= tokens.length; i++){
+    set.add(tokens.slice(i, i + n).join(" "));
+  }
+  return set;
+}
+
+function shingleCoverage(templateSet, uploadSet){
+  if(templateSet.size === 0) return 1;
   let hit = 0;
-  tmpl.forEach(w => { if(up.has(w)) hit++; });
-  return hit / tmpl.size;
+  templateSet.forEach(s => { if(uploadSet.has(s)) hit++; });
+  return hit / templateSet.size;
 }
 
 async function readPdfProfile(data){
@@ -1125,7 +1128,9 @@ function validateSLA(file){
           }
         } else {
           // Text layer intact → it must contain most of the template's words.
-          if(templateCoverage(original.text, uploaded.text) < SLA_MATCH_THRESHOLD){
+          const tmplShingles = slaShingles(slaTokens(original.text));
+          const upShingles   = slaShingles(slaTokens(uploaded.text));
+          if(shingleCoverage(tmplShingles, upShingles) < SLA_COVERAGE_THRESHOLD){
             showResult("sla", false, [E.slaWrongTemplate]);
             return;
           }
