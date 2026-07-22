@@ -218,6 +218,10 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
 const EVENT_DATES = ["15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
+// Hotel stays may begin the night before the programme, so hotel nights run
+// 14.09–20.09 — one day earlier than the daytime programme (voucher/driving).
+const HOTEL_DATES = ["14.09.2026","15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
+function datesFor(category){ return category === "hotel" ? HOTEL_DATES : EVENT_DATES; }
 const state = { hotel:false, voucher:false, driving:false, sla:false };
 const rawFiles = { hotel:null, voucher:null, driving:null, sla:null };
 
@@ -633,7 +637,7 @@ function renderDateFields(category){
   }
 
   // No URL parameters at all: manual entry across the full event period.
-  EVENT_DATES.forEach(d => {
+  datesFor(category).forEach(d => {
     const id = category+"-count-"+d.replace(/\./g,"");
     const field = document.createElement("div");
     field.className = "date-field";
@@ -660,7 +664,7 @@ function getBookedCounts(category){
 function getExpectedDateCounts(category){
   const expected = {};
   const booked = getBookedCounts(category);
-  const relevantDates = isPersonalizedMode ? Object.keys(booked || {}) : EVENT_DATES;
+  const relevantDates = isPersonalizedMode ? Object.keys(booked || {}) : datesFor(category);
   relevantDates.forEach(d => {
     const input = document.getElementById(category+"-count-"+d.replace(/\./g,""));
     const val = input ? (parseInt(input.value, 10) || 0) : 0;
@@ -825,7 +829,7 @@ function validateHotel(rows){
     const current = new Date(ciDate);
     while(current < coDate){
       const night = fmtDate(current);
-      if(EVENT_DATES.includes(night)){
+      if(HOTEL_DATES.includes(night)){
         if(!nightsByDateHotel[night]) nightsByDateHotel[night] = {};
         nightsByDateHotel[night][hotelLower] = (nightsByDateHotel[night][hotelLower] || 0) + 1;
         nightsByDate[night] = (nightsByDate[night] || 0) + 1;
