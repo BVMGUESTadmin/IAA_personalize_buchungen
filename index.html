@@ -281,6 +281,7 @@ const TRANSLATIONS = {
     submitting: "Wird gesendet...",
     submitStatusErr: "Beim Absenden ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder kontaktieren Sie uns.",
     thankYou: "Vielen Dank! Ihre Anmeldung wurde erfolgreich übermittelt.",
+    alreadySubmitted: "Übermittlung bereits erfolgt",
     slaTitle: "4. Service Level Agreement (SLA)",
     slaTag: "Erforderlich",
     slaHint: "Bitte laden Sie Ihr SLA herunter, unterschreiben Sie es und laden Sie es hier als PDF wieder hoch.",
@@ -355,6 +356,7 @@ const TRANSLATIONS = {
     submitting: "Submitting...",
     submitStatusErr: "An error occurred during submission. Please try again or contact us.",
     thankYou: "Thank you! Your registration has been successfully submitted.",
+    alreadySubmitted: "Submission already made",
     slaTitle: "4. Service Level Agreement (SLA)",
     slaTag: "Required",
     slaHint: "Please download your SLA, sign it, and upload it back here as a PDF.",
@@ -1259,7 +1261,8 @@ async function submitAll(){
 
     const res = await fetch(WEBHOOK_URL, { method:"POST", body:formData });
     if(!res.ok) throw new Error("Webhook responded with status " + res.status);
-
+    
+    markSubmitted();
     document.getElementById("submit-panel").style.display = "none";
     document.getElementById("thankyou-panel").style.display = "block";
   } catch(err){
@@ -1270,8 +1273,26 @@ async function submitAll(){
   }
 }
 
-applyPersonalization();
-updateOverall();
+function submissionKey(){
+  return "iaa2026_submitted_" + (personalized.email ? decodeURIComponent(personalized.email) : window.location.search);
+}
+function alreadySubmitted(){
+  try { return localStorage.getItem(submissionKey()) === "1"; } catch(e){ return false; }
+}
+function markSubmitted(){
+  try { localStorage.setItem(submissionKey(), "1"); } catch(e){}
+}
+function showAlreadySubmitted(){
+  document.querySelector(".wrap").innerHTML =
+    `<div style="max-width:960px;margin:60px auto;text-align:center;font-size:20px;font-weight:bold;color:#0F6E56;">✓ ${t.alreadySubmitted}</div>`;
+}
+  
+if(alreadySubmitted()){
+  showAlreadySubmitted();
+} else {
+  applyPersonalization();
+  updateOverall();
+}
 </script>
 </body>
 </html>
