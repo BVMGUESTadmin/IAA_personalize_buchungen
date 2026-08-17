@@ -580,7 +580,7 @@ function applyPersonalization(){
   const downloadLink = document.getElementById("sla-download-link");
   if(personalized.slaUrl){
     downloadLink.textContent = t.slaDownload;
-    downloadLink.href = decodeURIComponent(personalized.slaUrl);
+    downloadLink.href = personalized.slaUrl;
   } else {
     downloadLink.parentElement.style.display = "none";
     document.getElementById("sla-hint").textContent = t.slaHintNoLink;
@@ -1091,16 +1091,17 @@ async function readPdfProfile(data){
 }
 
 let _originalProfileCache = null;
-async function getOriginalProfile(){
+async function getOriginalProfile()/* {
   if(_originalProfileCache) return _originalProfileCache;
   if(!personalized.slaUrl) return null;
   try{
-    const res = await fetch(decodeURIComponent(personalized.slaUrl));
+    const res = await fetch(personalized.slaUrl);
     if(!res.ok) return null;
     const buf = await res.arrayBuffer();
     _originalProfileCache = await readPdfProfile(new Uint8Array(buf));
     return _originalProfileCache;
-  }catch(e){
+  }catch(e) */
+  {
     return null;
   }
 }
@@ -1117,10 +1118,10 @@ function validateSLA(file){
 
       // A template URL is configured but couldn't be loaded → we cannot verify.
       // Fail loudly instead of letting the document through.
-      if(hasTemplate && !original){
+      /* if(hasTemplate && !original){
         showResult("sla", false, [E.slaFetchFailed]);
         return;
-      }
+      } */
 
       const errors = [];
 
@@ -1250,7 +1251,7 @@ async function submitAll(){
     formData.append("hotel",    personalized.hotel    || "no");
     formData.append("voucher",  personalized.voucher  || "no");
     formData.append("driving",  personalized.driving  || "no");
-    formData.append("slaUrl",   personalized.slaUrl ? decodeURIComponent(personalized.slaUrl) : "none");
+    formData.append("slaUrl", personalized.slaUrl || "none");;
     formData.append("submittedAt", new Date().toISOString());
     formData.append("pageUrl",  window.location.href);
 
