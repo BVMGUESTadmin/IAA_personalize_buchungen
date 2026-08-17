@@ -1140,7 +1140,7 @@ function validateSLA(file){
       // ---- 2) SIGNATURE: has something been signed on top of the template? ----
       const hasSigFields   = uploaded.sigFields.length > 0;
       const hasDrawnSig    = uploaded.inkOrStamp > 0;
-      const addedGraphics  = uploaded.imagesLastPage > 0;
+      const addedGraphics  = uploaded.imagesLastPage > 1;
 
       if(hasSigFields){
         // Every AcroForm signature field must be filled.
