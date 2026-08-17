@@ -478,12 +478,7 @@ function cell(row, names){
 function str(row, names){ return String(cell(row, names) || "").trim(); }
 
 function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(String(v).trim()); }
-/*function isValidPhone(v){
-  const raw = String(v).trim().replace(/[\s\-()/.]/g, "");
-  if(!/^(\+49|0)\d+$/.test(raw)) return false;
-  const digits = raw.replace(/\D/g, "");
-  return digits.length >= 10 && digits.length <= 15;
-}*/
+
 function isValidPhone(v){
   const raw = String(v).trim().replace(/[\s\-()/]/g, "");
   if(!/^\+?\d+$/.test(raw)) return false;
@@ -1091,19 +1086,8 @@ async function readPdfProfile(data){
 }
 
 let _originalProfileCache = null;
-async function getOriginalProfile()/* {
-  if(_originalProfileCache) return _originalProfileCache;
-  if(!personalized.slaUrl) return null;
-  try{
-    const res = await fetch(personalized.slaUrl);
-    if(!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    _originalProfileCache = await readPdfProfile(new Uint8Array(buf));
-    return _originalProfileCache;
-  }catch(e) */
-  {
+async function getOriginalProfile(){
     return null;
-  }
 }
 
 function validateSLA(file){
@@ -1113,16 +1097,7 @@ function validateSLA(file){
   reader.onload = async function(){
     try{
       const uploaded = await readPdfProfile(new Uint8Array(this.result));
-      const hasTemplate = !!personalized.slaUrl;
       const original = await getOriginalProfile();
-
-      // A template URL is configured but couldn't be loaded → we cannot verify.
-      // Fail loudly instead of letting the document through.
-      /* if(hasTemplate && !original){
-        showResult("sla", false, [E.slaFetchFailed]);
-        return;
-      } */
-
       const errors = [];
 
       // ---- 1) IDENTITY: is this actually the SLA template? ----
