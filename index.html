@@ -320,7 +320,7 @@ const TRANSLATIONS = {
       noBookings: "Für Ihre Buchung wurden keine Hotelvorgaben übermittelt. Bitte kontaktieren Sie uns.",
       noDatesSelected: "Bitte geben Sie mindestens ein Datum mit einer Personenzahl größer als 0 an.",
       invalidEmail: (rn, val) => `Zeile ${rn}: Die E-Mail-Adresse „${val}“ ist ungültig. Erwartet wird das Format name@firma.de.`,
-      invalidPhone: (rn, val) => `Zeile ${rn}: Die Handynummer „${val}“ ist ungültig. Erwartet wird das Format +49… oder 01… mit 10–15 Ziffern.`,
+      invalidPhone: (rn, val) => `Zeile ${rn}: Die Handynummer „${val}“ ist ungültig.`,
       invalidDrivingType: (rn, val) => `Zeile ${rn}: Fahr-Art muss „Selbstfahrer:in“ oder „Beifahrer:in“ sein (gefunden: „${val || "leer"}“).`,
       invalidLicense: (rn, val) => `Zeile ${rn}: C_Klasse_Fuehrerschein muss „Ja“ oder „Nein“ sein (gefunden: „${val || "leer"}“).`,
       licenseRequired: (rn) => `Zeile ${rn}: Bei „Selbstfahrer:in“ muss C_Klasse_Fuehrerschein „Ja“ sein.`,
@@ -394,7 +394,7 @@ const TRANSLATIONS = {
       noBookings: "No hotel allocation was submitted for your booking. Please contact us.",
       noDatesSelected: "Please enter at least one date with a number of people greater than 0.",
       invalidEmail: (rn, val) => `Row ${rn}: The email address "${val}" is invalid. Expected format: name@company.de.`,
-      invalidPhone: (rn, val) => `Row ${rn}: The mobile number "${val}" is invalid. Expected format: +49… or 01… with 10–15 digits.`,
+      invalidPhone: (rn, val) => `Row ${rn}: The mobile number "${val}" is invalid.`,
       invalidDrivingType: (rn, val) => `Row ${rn}: Driving type must be "Selbstfahrer:in" (self-driving) or "Beifahrer:in" (co-driver) — found: "${val || "empty"}".`,
       invalidLicense: (rn, val) => `Row ${rn}: Class C driving licence must be "Ja" or "Nein" — found: "${val || "empty"}".`,
       licenseRequired: (rn) => `Row ${rn}: For "Selbstfahrer:in" (self-driving) the Class C driving licence must be "Ja".`,
@@ -478,7 +478,12 @@ function cell(row, names){
 function str(row, names){ return String(cell(row, names) || "").trim(); }
 
 function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(String(v).trim()); }
-
+/*function isValidPhone(v){
+  const raw = String(v).trim().replace(/[\s\-()/.]/g, "");
+  if(!/^(\+49|0)\d+$/.test(raw)) return false;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}*/
 function isValidPhone(v){
   const raw = String(v).trim().replace(/[\s\-()/]/g, "");
   if(!/^\+?\d+$/.test(raw)) return false;
