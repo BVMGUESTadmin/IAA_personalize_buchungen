@@ -1078,7 +1078,7 @@ async function readPdfProfile(data){
         profile.sigFields.push(a.fieldName || a.alternativeText || `#${profile.sigFields.length + 1}`);
         if(a.fieldValue) profile.filledSig++;
       }
-      if(a.subtype === "Ink" || a.subtype === "Stamp" || a.subtype === "FreeText") profile.inkOrStamp++;
+      if(a.subtype === "Ink" || a.subtype === "Stamp") profile.inkOrStamp++;
     });
     const ops = await page.getOperatorList();
     const imgOps = [
@@ -1087,7 +1087,9 @@ async function readPdfProfile(data){
       pdfjsLib.OPS.paintInlineImage,
       pdfjsLib.OPS.paintImageMaskXObject
     ].filter(x => x !== undefined);
-    ops.fnArray.forEach(fn => { if(imgOps.includes(fn)) profile.images++; });
+    let pageImages = 0;
+    ops.fnArray.forEach(fn => { if(imgOps.includes(fn)){ profile.images++; pageImages++; } });
+    if(i === pdf.numPages) profile.imagesLastPage = pageImages;
     const tc = await page.getTextContent();
     profile.text += " " + tc.items.map(it => it.str).join(" ");
   }
@@ -1138,8 +1140,7 @@ function validateSLA(file){
       // ---- 2) SIGNATURE: has something been signed on top of the template? ----
       const hasSigFields   = uploaded.sigFields.length > 0;
       const hasDrawnSig    = uploaded.inkOrStamp > 0;
-      const addedGraphics  = original ? (uploaded.images > original.images)
-                                      : (uploaded.images > 0);
+      const addedGraphics  = uploaded.imagesLastPage > 0;
 
       if(hasSigFields){
         // Every AcroForm signature field must be filled.
