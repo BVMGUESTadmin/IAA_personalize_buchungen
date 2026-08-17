@@ -215,7 +215,12 @@
 </div>
 
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+} else {
+  window.__pdfjsMissing = true;
+  console.error("pdf.js did not load from the CDN — SLA validation unavailable. Check Network tab / ad-blockers / connectivity.");
+}
 
 const EVENT_DATES = ["15.09.2026","16.09.2026","17.09.2026","18.09.2026","19.09.2026","20.09.2026"];
 // Hotel stays may begin the night before the programme, so hotel nights run
