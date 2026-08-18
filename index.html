@@ -230,7 +230,7 @@ function datesFor(category){ return category === "hotel" ? HOTEL_DATES : EVENT_D
 const state = { hotel:false, voucher:false, driving:false, sla:false };
 const rawFiles = { hotel:null, voucher:null, driving:null, sla:null };
 
-// TODO: replace with your real Zapier Catch Hook webhook URL
+// TODO: replace with the real Zapier Catch Hook webhook URL
 const WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/17616690/42majg9/";
 
 /* ------------------------------------------------------------------
@@ -258,7 +258,7 @@ const isPersonalizedMode = personalized.hotel !== null || personalized.voucher !
 
 /* ------------------------------------------------------------------
    TRANSLATIONS — every user-facing string, including all validation
-   errors, lives here and is selected by ?sprache=de|en
+   errors, lives here and is selected by sprache=de|en
 ------------------------------------------------------------------ */
 const TRANSLATIONS = {
   de: {
@@ -576,7 +576,7 @@ function applyPersonalization(){
   document.getElementById("submit-btn").textContent = t.submitBtn;
   document.querySelector("#thankyou-panel p").textContent = t.thankYou;
 
-  // The SLA is always required. Only the download link depends on ?sla=.
+  // The SLA is always required.
   document.getElementById("sla-section").style.display = "block";
   document.getElementById("sla-header").textContent = t.slaTitle;
   document.getElementById("sla-tag").textContent = t.slaTag;
