@@ -1102,10 +1102,26 @@ async function getOriginalProfile(){
     return null;
 }
 
+
 function validateSLA(file){
   if(!isPdfFile(file)){ showResult("sla", false, [E.notPdf]); return; }
 
   const reader = new FileReader();
+  reader.onload = async function(){
+    try{
+      // Document validation only: confirm the upload is a readable PDF.
+      await pdfjsLib.getDocument({ data: new Uint8Array(this.result) }).promise;
+      showResult("sla", true, []);
+    }catch(e){
+      console.error("SLA PDF check failed:", e);
+      showResult("sla", false, [E.slaUnreadable]);
+    }
+  };
+  reader.onerror = () => showResult("sla", false, [E.slaUnreadable]);
+  reader.readAsArrayBuffer(file);
+}
+
+  /*const reader = new FileReader();
   reader.onload = async function(){
     try{
       const uploaded = await readPdfProfile(new Uint8Array(this.result));
@@ -1163,7 +1179,7 @@ function validateSLA(file){
   };
   reader.onerror = () => showResult("sla", false, [E.slaUnreadable]);
   reader.readAsArrayBuffer(file);
-}
+}*/
 
 setupDrop("hotel", validateHotel);
 setupDrop("voucher", validateVoucher);
