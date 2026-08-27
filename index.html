@@ -134,24 +134,44 @@
     </div>
   </div>
 
-  <!-- SALES LOUNGE & VIP CAFÉ -->
-  <div class="section" id="voucher-section">
-    <h2>2. Sales Lounge & VIP Café</h2>
-    <span class="included-tag" id="voucher-tag" style="display:none;">In Ihrer Buchung enthalten</span>
-    <div id="voucher-body">
-      <p class="hint">Hier sind die von Ihnen für die angegebenen Daten gebuchten Tickets. Nur die ausgewählten Buchungen werden geprüft.</p>
-      <div class="date-row" id="voucher-dates"></div>
-      <div style="margin:14px 0;">
-        <a class="tpl" href="Sales_Voucher_Teilnehmer.xlsx" download>↓ Sales Lounge & VIP Café-Vorlage herunterladen</a>
-      </div>
-      <div class="dropzone" id="voucher-drop" onclick="document.getElementById('voucher-file').click()">
-        Excel-Datei hier ablegen oder klicken
-        <input type="file" id="voucher-file" accept=".xlsx,.xls">
-      </div>
-      <div class="filename" id="voucher-filename"></div>
-      <div class="result" id="voucher-result"></div>
+<!-- SALES LOUNGE & VIP CAFÉ -->
+<div class="section" id="voucher-section">
+  <h2>2. Sales Lounge & VIP Café</h2>
+
+  <span class="included-tag" id="voucher-tag" style="display:none;">
+    In Ihrer Buchung enthalten
+  </span>
+
+  <div id="voucher-body">
+
+    <p class="hint">
+      Hier finden Sie die Anzahl der von Ihnen gebuchten Voucher für die <strong>Sales Lounge &amp; das VIP Café</strong>.
+      Bitte beachten Sie, dass ausschließlich die hier angegebene Anzahl berücksichtigt und geprüft wird.
+    </p>
+
+    <p class="hint">
+      <strong>Wichtiger Hinweis:</strong> Ein Voucher wird ausschließlich für den jeweiligen <strong>Kundenbetreuer</strong> benötigt.
+      Die Kunden, die der Kundenbetreuer in die Sales Lounge bzw. das VIP Café begleitet, benötigen <strong>keinen eigenen Voucher</strong>.
+    </p>
+
+    <div class="date-row" id="voucher-dates"></div>
+
+    <div style="margin:14px 0;">
+      <a class="tpl" href="Sales_Voucher_Teilnehmer.xlsx" download>
+        Sales Lounge & VIP Café-Vorlage herunterladen
+      </a>
     </div>
+
+    <div class="dropzone" id="voucher-drop" onclick="document.getElementById('voucher-file').click()">
+      Excel-Datei hier ablegen oder klicken
+      <input type="file" id="voucher-file" accept=".xlsx,.xls">
+    </div>
+
+    <div class="filename" id="voucher-filename"></div>
+    <div class="result" id="voucher-result"></div>
+
   </div>
+</div>
 
   <!-- DRIVING EXPERIENCE -->
   <div class="section" id="driving-section">
