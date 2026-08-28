@@ -289,7 +289,7 @@ const TRANSLATIONS = {
     hotelTemplate: "↓ Hotel-Vorlage herunterladen",
     voucherTitle: "2. Sales Lounge & VIP Café",
     voucherTag: "In Ihrer Buchung enthalten",
-    voucherHint: "Hier finden Sie die Anzahl an Vouchern, die Sie für die Sales Lounge & das VIP Café gebucht haben. Bitte beachten Sie, dass nur diese Anzahl geprüft wird.",
+    voucherHint: `Hier finden Sie die Anzahl der von Ihnen gebuchten Voucher für die <strong>Sales Lounge &amp; das VIP Café</strong>. Bitte beachten Sie, dass ausschließlich die hier angegebene Anzahl berücksichtigt und geprüft wird.<br><br><strong>Wichtiger Hinweis:</strong> Ein Voucher wird ausschließlich für den jeweiligen <strong>Kundenbetreuer</strong> benötigt. Die Kunden, die der Kundenbetreuer in die Sales Lounge bzw. das VIP Café begleitet, benötigen <strong>keinen eigenen Voucher</strong>.`,
     voucherTemplate: "↓ Sales Lounge & VIP Café-Vorlage herunterladen",
     drivingTitle: "3. Driving Experience",
     drivingTag: "In Ihrer Buchung enthalten",
@@ -364,7 +364,7 @@ const TRANSLATIONS = {
     hotelTemplate: "↓ Download Hotel Template",
     voucherTitle: "2. Sales Lounge & VIP Café",
     voucherTag: "Included in your booking",
-    voucherHint: "Here you can find the number of vouchers you have booked for the Sales Lounge & VIP Café. Please note that only the number of vouchers stated here will be considered and verified. Important: A voucher is required only for the customer representative. Customers accompanied by the customer representative to the Sales Lounge or VIP Café do not require their own voucher.",
+    voucherHint: `Here you can find the number of vouchers you have booked for the <strong>Sales Lounge &amp; VIP Café</strong>. Please note that only the number of vouchers stated here will be considered and verified.<br><br><strong>Important:</strong> A voucher is required <strong>only for the customer representative</strong>. Customers accompanied by the customer representative to the Sales Lounge or VIP Café <strong>do not require their own voucher</strong>.`,
     voucherTemplate: "↓ Download Sales Lounge & VIP Café Template",
     drivingTitle: "3. Driving Experience",
     drivingTag: "Included in your booking",
@@ -580,7 +580,7 @@ function applyPersonalization(){
 
   document.querySelector("#voucher-section h2").textContent = t.voucherTitle;
   document.querySelector("#voucher-tag").textContent = t.voucherTag;
-  document.querySelector("#voucher-body .hint").textContent = t.voucherHint;
+  document.querySelector("#voucher-body .hint").innerHTML = t.voucherHint;
   document.querySelector("#voucher-body .tpl").textContent = t.voucherTemplate;
   document.querySelector("#voucher-drop").childNodes[0].nodeValue = t.dropzone;
 
